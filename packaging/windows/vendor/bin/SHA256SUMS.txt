@@ -1,0 +1,3 @@
+# Add one verified line per binary before release:
+# <sha256>  ffmpeg.exe
+# <sha256>  ffprobe.exe

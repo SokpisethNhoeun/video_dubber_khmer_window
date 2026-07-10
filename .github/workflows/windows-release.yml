@@ -1,0 +1,93 @@
+name: Windows release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version
+        required: true
+        default: 1.0.0
+      license_server_url:
+        description: Public HTTPS fastAPI_cloud URL
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-2022
+    env:
+      SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
+      SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install Python build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip setuptools wheel
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Install trusted FFmpeg and Inno Setup
+        shell: pwsh
+        run: |
+          choco install ffmpeg innosetup -y --no-progress
+          $Vendor = "packaging/windows/vendor/bin"
+          New-Item -ItemType Directory -Force $Vendor | Out-Null
+          $Ffmpeg = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg\tools" -Filter ffmpeg.exe -Recurse | Select-Object -First 1
+          $Ffprobe = Get-ChildItem "C:\ProgramData\chocolatey\lib\ffmpeg\tools" -Filter ffprobe.exe -Recurse | Select-Object -First 1
+          if (-not $Ffmpeg -or -not $Ffprobe) { throw "Chocolatey FFmpeg binaries were not found." }
+          Copy-Item $Ffmpeg.FullName "$Vendor/ffmpeg.exe" -Force
+          Copy-Item $Ffprobe.FullName "$Vendor/ffprobe.exe" -Force
+          $FfmpegHash = (Get-FileHash "$Vendor/ffmpeg.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          $FfprobeHash = (Get-FileHash "$Vendor/ffprobe.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$FfmpegHash  ffmpeg.exe`n$FfprobeHash  ffprobe.exe" | Set-Content "$Vendor/SHA256SUMS.txt"
+
+      - name: Build frozen application
+        shell: pwsh
+        run: |
+          packaging/windows/build.ps1 `
+            -LicenseServerUrl '${{ inputs.license_server_url }}' `
+            -Version '${{ inputs.version }}' `
+            -SkipInstaller
+
+      - name: Frozen clean-machine smoke test
+        shell: pwsh
+        run: |
+          dist/KhmerVideoDubber/KhmerVideoDubber.exe --smoke-test
+
+      - name: Optionally sign frozen executable
+        if: ${{ env.SIGNING_PFX != '' }}
+        shell: pwsh
+        run: |
+          $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($Pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
+          $Signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD "dist\KhmerVideoDubber\KhmerVideoDubber.exe"
+          Remove-Item $Pfx -Force
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          ISCC.exe "/DMyAppVersion=${{ inputs.version }}" packaging/windows/KhmerVideoDubber.iss
+
+      - name: Optionally sign installer
+        if: ${{ env.SIGNING_PFX != '' }}
+        shell: pwsh
+        run: |
+          $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($Pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
+          $Signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1).FullName
+          & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD "packaging\windows\release\KhmerVideoDubber-Setup-${{ inputs.version }}.exe"
+          Remove-Item $Pfx -Force
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: KhmerVideoDubber-Setup-${{ inputs.version }}
+          path: packaging/windows/release/KhmerVideoDubber-Setup-${{ inputs.version }}.exe
+          if-no-files-found: error

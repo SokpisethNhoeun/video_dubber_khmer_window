@@ -1,0 +1,9 @@
+# Optional dependencies for Per-person voices speaker detection.
+pyannote.audio==3.4.0
+speechbrain==1.1.0
+scikit-learn>=1.4,<2
+joblib>=1.3
+# TorchCodec is intentionally not required by this app. If it is installed,
+# keep it compatible with your torch version or remove it.
+# Optional: background music / SFX preservation (HTDemucs source separation).
+demucs>=4,<5

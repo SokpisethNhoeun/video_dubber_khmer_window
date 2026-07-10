@@ -1,0 +1,81 @@
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+*.pem
+*.pfx
+*.p12
+*.key
+*.crt
+secrets.json
+settings.json
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+.venv*/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.uv-cache/
+.openvoice-python/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Project specific caches and media files
+models_cache/
+cache/
+temp/
+voice_profiles/
+downloads/
+outputs/
+sessions/
+*.wav
+*.mp3
+*.mp4
+*.m4a
+*.flac
+*.aac
+*.ogg
+*.mkv
+*.mov
+*.avi
+*.webm
+*.srt
+*.ass
+*.vtt
+elevenlabs_voice_cache.json
+quality_report.json
+quality_report.txt
+draft_queue.json
+
+# Windows release output and locally supplied vendor binaries
+build/
+dist/
+packaging/windows/generated/
+packaging/windows/release/
+packaging/windows/vendor/bin/*.exe
+packaging/windows/vendor/bin/*.dll
+
+# Local third-party source trees, runtimes, and downloaded weights are huge and
+# are not part of the PyInstaller build. Customer models download after install.
+third_party/
+
+# Editor / OS files
+.vscode/
+.idea/
+.claude/
+.fastapicloud/
+.DS_Store
+Thumbs.db
+Desktop.ini
