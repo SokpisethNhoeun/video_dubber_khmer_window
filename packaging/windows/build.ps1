@@ -20,15 +20,21 @@ foreach ($Name in @("ffmpeg.exe", "ffprobe.exe")) {
 }
 
 $ChecksumFile = Join-Path $VendorBin "SHA256SUMS.txt"
-$ChecksumText = Get-Content $ChecksumFile -Raw
+$ChecksumEntries = @{}
+foreach ($Line in Get-Content $ChecksumFile) {
+    $Trimmed = $Line.Trim()
+    if (-not $Trimmed -or $Trimmed.StartsWith("#")) { continue }
+    $Parts = $Trimmed -split '\s+', 2
+    if ($Parts.Count -eq 2 -and $Parts[0] -match '^[a-fA-F0-9]{64}$') {
+        $ChecksumEntries[$Parts[1].TrimStart('*')] = $Parts[0].ToLowerInvariant()
+    }
+}
 foreach ($Name in @("ffmpeg.exe", "ffprobe.exe")) {
-    $Pattern = "(?im)^([a-f0-9]{64})\s+\*?" + [regex]::Escape($Name) + '$'
-    $Match = [regex]::Match($ChecksumText, $Pattern)
-    if (-not $Match.Success) {
+    if (-not $ChecksumEntries.ContainsKey($Name)) {
         throw "Missing verified SHA-256 entry for $Name in $ChecksumFile."
     }
     $Actual = (Get-FileHash (Join-Path $VendorBin $Name) -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($Actual -ne $Match.Groups[1].Value.ToLowerInvariant()) {
+    if ($Actual -ne $ChecksumEntries[$Name]) {
         throw "SHA-256 verification failed for $Name."
     }
 }

@@ -45,7 +45,8 @@ jobs:
           Copy-Item $Ffprobe.FullName "$Vendor/ffprobe.exe" -Force
           $FfmpegHash = (Get-FileHash "$Vendor/ffmpeg.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
           $FfprobeHash = (Get-FileHash "$Vendor/ffprobe.exe" -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$FfmpegHash  ffmpeg.exe`n$FfprobeHash  ffprobe.exe" | Set-Content "$Vendor/SHA256SUMS.txt"
+          $Checksums = "$FfmpegHash  ffmpeg.exe`n$FfprobeHash  ffprobe.exe"
+          [IO.File]::WriteAllText("$Vendor/SHA256SUMS.txt", $Checksums, [Text.UTF8Encoding]::new($false))
 
       - name: Build frozen application
         shell: pwsh
