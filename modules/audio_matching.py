@@ -105,14 +105,19 @@ def post_clone_match(cloned_path: Path, reference_path: Path, output_path: Path 
     if ref_sr != sr:
         import subprocess
         import tempfile
-        tmp = Path(tempfile.mktemp(suffix=".wav"))
-        subprocess.run(
-            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-             "-i", str(reference_path), "-ar", str(sr), "-ac", "1", str(tmp)],
-            check=True,
-        )
-        ref_audio, _ = read_mono(tmp)
-        tmp.unlink(missing_ok=True)
+        import os
+        fd, tmp_path = tempfile.mkstemp(suffix=".wav")
+        os.close(fd)
+        tmp = Path(tmp_path)
+        try:
+            subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+                 "-i", str(reference_path), "-ar", str(sr), "-ac", "1", str(tmp)],
+                check=True,
+            )
+            ref_audio, _ = read_mono(tmp)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     shaped = match_spectrum(cloned_audio, ref_audio)
     final = match_loudness(shaped, ref_audio)

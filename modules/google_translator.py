@@ -70,7 +70,7 @@ def translate_segments_google(
                 translated_count += 1
                 continue
 
-            result = _translate_with_retry(translator, text, log_cb)
+            result = _translate_with_retry(translator, text, log_cb, cancel_event)
             segment.translated_text = result
             segment.raw_khmer_text = result
             segment.improved_khmer_text = result
@@ -84,8 +84,20 @@ def translate_segments_google(
     return segments
 
 
+def _cancel_aware_sleep(delay: float, cancel_event: Event) -> None:
+    from core.context import CancellationError
+    steps = int(delay * 10)
+    for _ in range(steps):
+        if cancel_event.is_set():
+            raise CancellationError("Processing cancelled by user")
+        time.sleep(0.1)
+    rem = delay - (steps * 0.1)
+    if rem > 0 and not cancel_event.is_set():
+        time.sleep(rem)
+
+
 def _translate_with_retry(
-    translator, text: str, log_cb: LogCallback | None
+    translator, text: str, log_cb: LogCallback | None, cancel_event: Event
 ) -> str:
     for attempt in range(MAX_RETRIES):
         try:
@@ -94,7 +106,7 @@ def _translate_with_retry(
             if attempt < MAX_RETRIES - 1:
                 if log_cb:
                     log_cb(f"  Google Translate retry {attempt + 1}: {exc}")
-                time.sleep(RETRY_DELAY * (attempt + 1))
+                _cancel_aware_sleep(RETRY_DELAY * (attempt + 1), cancel_event)
             else:
                 raise RuntimeError(f"Google Translate failed after {MAX_RETRIES} retries: {exc}") from exc
     return text

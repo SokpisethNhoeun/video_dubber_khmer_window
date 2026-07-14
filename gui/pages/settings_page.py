@@ -37,9 +37,20 @@ class SettingsPage(QWidget):
         layout.addWidget(self._section_title("License"))
         license_form = QFormLayout()
         license_form.setSpacing(12)
+
+        license_row_widget = QWidget()
+        license_row = QHBoxLayout(license_row_widget)
+        license_row.setContentsMargins(0, 0, 0, 0)
         self.license_key = QLineEdit()
         self.license_key.setPlaceholderText("KVD-XXXXXX-XXXXXX-XXXXXX-XXXXXX")
-        license_form.addRow("Subscription key", self.license_key)
+        self.license_key.setReadOnly(True)
+        self.change_license_key_button = QPushButton("Change Key")
+        self.change_license_key_button.setObjectName("SecondaryButton")
+        self.change_license_key_button.clicked.connect(self._toggle_license_key_edit)
+        license_row.addWidget(self.license_key, 1)
+        license_row.addWidget(self.change_license_key_button)
+
+        license_form.addRow("Subscription key", license_row_widget)
         self.activate_license_button = QPushButton("Activate on This Device")
         self.activate_license_button.setObjectName("SecondaryButton")
         self.license_status = QLabel("$11.99/month · $59.99/6 months · $99.99/year")
@@ -55,10 +66,21 @@ class SettingsPage(QWidget):
         layout.addWidget(self._section_title("AI Keys"))
         ai_form = QFormLayout()
         ai_form.setSpacing(12)
+
+        gemini_row_widget = QWidget()
+        gemini_row = QHBoxLayout(gemini_row_widget)
+        gemini_row.setContentsMargins(0, 0, 0, 0)
         self.gemini_api_key = QLineEdit()
         self.gemini_api_key.setEchoMode(QLineEdit.EchoMode.Password)
         self.gemini_api_key.setPlaceholderText("Your own Gemini API key")
-        ai_form.addRow("Gemini API key", self.gemini_api_key)
+        self.gemini_api_key.setReadOnly(True)
+        self.change_gemini_key_button = QPushButton("Change Key")
+        self.change_gemini_key_button.setObjectName("SecondaryButton")
+        self.change_gemini_key_button.clicked.connect(self._toggle_gemini_key_edit)
+        gemini_row.addWidget(self.gemini_api_key, 1)
+        gemini_row.addWidget(self.change_gemini_key_button)
+
+        ai_form.addRow("Gemini API key", gemini_row_widget)
         self.test_gemini_button = QPushButton("Save & Test Gemini Key")
         self.test_gemini_button.setObjectName("SecondaryButton")
         self.gemini_key_status = QLabel("A valid Gemini key is required for Gemini features.")
@@ -183,3 +205,45 @@ class SettingsPage(QWidget):
         )
         if path:
             self.url_import_cookies_file.setText(path)
+
+    def _toggle_license_key_edit(self) -> None:
+        if self.license_key.isReadOnly():
+            self.license_key.setReadOnly(False)
+            self.change_license_key_button.setText("Lock Key")
+            self.license_key.setFocus()
+            self.license_key.selectAll()
+        else:
+            self.license_key.setReadOnly(True)
+            self.change_license_key_button.setText("Change Key")
+
+    def _toggle_gemini_key_edit(self) -> None:
+        if self.gemini_api_key.isReadOnly():
+            self.gemini_api_key.setReadOnly(False)
+            self.change_gemini_key_button.setText("Lock Key")
+            self.gemini_api_key.setFocus()
+            self.gemini_api_key.selectAll()
+        else:
+            self.gemini_api_key.setReadOnly(True)
+            self.change_gemini_key_button.setText("Change Key")
+
+    def update_license_display(self) -> None:
+        from config.user_secrets import load_user_secrets
+        sec = load_user_secrets()
+        key = sec.get("LICENSE_KEY", "")
+        self.license_key.setText(key)
+
+        start = sec.get("LICENSE_ACTIVATED_AT", "")
+        end = sec.get("LICENSE_EXPIRES_AT", "")
+
+        if key:
+            if start or end:
+                from datetime import datetime
+                def fmt(iso):
+                    if not iso: return "N/A"
+                    try: return datetime.fromisoformat(iso.replace("Z", "+00:00")).strftime("%Y-%m-%d")
+                    except: return iso[:10]
+                self.license_status.setText(f"Active Subscription Key: {fmt(start)} to {fmt(end)}")
+            else:
+                self.license_status.setText("License key saved. Click activate to verify dates.")
+        else:
+            self.license_status.setText("No active subscription key. $11.99/month · $59.99/6 months · $99.99/year")

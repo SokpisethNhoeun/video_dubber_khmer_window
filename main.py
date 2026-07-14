@@ -5,6 +5,17 @@ import os
 import sys
 from pathlib import Path
 
+if len(sys.argv) > 2 and sys.argv[1] == "-m":
+    import runpy
+    module_name = sys.argv[2]
+    sys.argv = [sys.argv[0]] + sys.argv[3:]
+    try:
+        runpy.run_module(module_name, run_name="__main__")
+        sys.exit(0)
+    except Exception as e:
+        print(f"Error running module {module_name}: {e}", file=sys.stderr)
+        sys.exit(1)
+
 # Suppress noisy Qt debug messages (Wayland text-input events, FFmpeg version banner)
 os.environ.setdefault(
     "QT_LOGGING_RULES",

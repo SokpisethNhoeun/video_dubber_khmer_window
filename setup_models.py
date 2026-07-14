@@ -14,7 +14,11 @@ from config.paths import nllb_cache_dir, whisper_cache_dir
 # =========================
 
 # Enable fast HuggingFace downloader (VERY IMPORTANT)
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+try:
+    import hf_transfer  # type: ignore
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+except ImportError:
+    pass
 
 # Avoid IPv6 stalls on Kali/Linux
 os.environ["HF_HUB_DISABLE_IPV6"] = "1"
@@ -47,23 +51,18 @@ def download_whisper_models(models: List[str]) -> None:
 # =========================
 
 def download_nllb() -> None:
-    from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+    from huggingface_hub import snapshot_download
 
     print(f"\n[NLLB] Downloading: {NLLB_MODEL_ID}")
 
     cache_dir = str(nllb_cache_dir())
 
     _safe_download(
-        AutoTokenizer.from_pretrained,
-        NLLB_MODEL_ID,
+        snapshot_download,
+        repo_id=NLLB_MODEL_ID,
         cache_dir=cache_dir,
-    )
-
-    _safe_download(
-        AutoModelForSeq2SeqLM.from_pretrained,
-        NLLB_MODEL_ID,
-        cache_dir=cache_dir,
-        low_cpu_mem_usage=True,
+        resume_download=True,
+        max_workers=8,
     )
 
 

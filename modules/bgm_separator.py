@@ -162,7 +162,7 @@ def mix_audio_ducked(
     from modules.audio_utils import ensure_ffmpeg
     ensure_ffmpeg()
 
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         while process.poll() is None:
             if cancel_event.is_set():
@@ -176,8 +176,7 @@ def mix_audio_ducked(
         raise
 
     if process.returncode != 0:
-        stderr = process.stderr.read().decode("utf-8", errors="replace") if process.stderr else ""
-        raise RuntimeError(f"Sidechain ducking mix failed: {stderr.strip()[:400]}")
+        raise RuntimeError("Sidechain ducking mix failed.")
     return output_wav
 
 

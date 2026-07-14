@@ -589,3 +589,34 @@ class PreviewSegmentWorker(QObject):
 
     def cancel(self) -> None:
         self.cancel_event.set()
+
+
+class StartupValidationWorker(QObject):
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self) -> None:
+        super().__init__()
+
+    @pyqtSlot()
+    def run(self) -> None:
+        try:
+            from licensing.client import LicenseClient
+            from modules import gemini_key_validator
+            import os
+
+            client = LicenseClient()
+            if client.required:
+                license_result = client.validate()
+                if not license_result.valid:
+                    self.finished.emit(False, "No active license is available yet. Verify Gmail, purchase, then activate your key.")
+                    return
+
+            gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
+            valid_key, key_message = gemini_key_validator.validate_gemini_api_key(gemini_key)
+            if not valid_key:
+                self.finished.emit(False, key_message)
+                return
+
+            self.finished.emit(True, "Subscription and Gemini API key are valid.")
+        except Exception as exc:
+            self.finished.emit(False, f"Validation failed: {exc}")

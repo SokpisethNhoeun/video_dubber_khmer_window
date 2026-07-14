@@ -530,9 +530,36 @@ def _check_selected_files(settings: PipelineSettings) -> list[SetupCheckResult]:
     return results
 
 
+def _check_gpu_cuda() -> list[SetupCheckResult]:
+    results: list[SetupCheckResult] = []
+    try:
+        import torch
+        if not torch.cuda.is_available():
+            results.append(_result("CUDA GPU", "WARN", "CUDA is not available in PyTorch. CPU will be used for execution, which is much slower."))
+            return results
+        
+        device_count = torch.cuda.device_count()
+        gpu_names = []
+        gpu_vrams = []
+        for i in range(device_count):
+            name = torch.cuda.get_device_name(i)
+            free_bytes, total_bytes = torch.cuda.mem_get_info(i)
+            free_gb = free_bytes / (1024 ** 3)
+            total_gb = total_bytes / (1024 ** 3)
+            gpu_names.append(name)
+            gpu_vrams.append(f"{free_gb:.1f} GB / {total_gb:.1f} GB free")
+            
+        details = ", ".join(f"[{i}] {name} ({vram})" for i, (name, vram) in enumerate(zip(gpu_names, gpu_vrams)))
+        results.append(_result("CUDA GPU", "OK", f"{device_count} device(s) found: {details}"))
+    except Exception as exc:
+        results.append(_result("CUDA GPU", "WARN", f"Could not perform GPU diagnostics: {exc}"))
+    return results
+
+
 def run_setup_checks(settings: PipelineSettings, project_root: Path) -> list[SetupCheckResult]:
     results: list[SetupCheckResult] = []
     results.extend(_check_selected_files(settings))
+    results.extend(_check_gpu_cuda())
     results.extend(_check_ffmpeg())
     results.extend(_check_python_packages(settings))
     results.append(_check_torchcodec())

@@ -92,6 +92,28 @@ def render_footer_preview(
     output_png.parent.mkdir(parents=True, exist_ok=True)
 
     width, height = resolution
+
+    if not config.enabled:
+        if video_path and video_path.exists():
+            command = [
+                "ffmpeg", "-y",
+                "-ss", str(timestamp),
+                "-i", str(video_path),
+                "-frames:v", "1",
+                str(output_png),
+            ]
+        else:
+            command = [
+                "ffmpeg", "-y",
+                "-f", "lavfi",
+                "-i", f"color=c=0x1e1e2e:s={width}x{height}:d=0.1",
+                "-frames:v", "1",
+                str(output_png),
+            ]
+        result = subprocess.run(command, capture_output=True, text=True, timeout=15)
+        if result.returncode != 0:
+            raise RuntimeError(f"Preview render failed: {result.stderr[:300]}")
+        return output_png
     ass_content = build_footer_ass(config, width, height, 10.0)
     if not ass_content:
         raise ValueError("No footer content to preview")

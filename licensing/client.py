@@ -24,6 +24,7 @@ class LicenseResult:
     message: str
     plan: str = ""
     expires_at: str = ""
+    activated_at: str = ""
 
 
 @dataclass(frozen=True)
@@ -51,13 +52,44 @@ class OtpResult:
     resend_after_seconds: int = 0
 
 
+def _get_release_license_server_url() -> str:
+    import sys
+    from pathlib import Path
+    bundle = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    paths = [
+        bundle / "release.json",
+        Path(__file__).resolve().parents[1] / "release.json",
+        Path(sys.argv[0]).parent / "release.json"
+    ]
+    for path in paths:
+        try:
+            if path.exists():
+                data = json.loads(path.read_text(encoding="utf-8"))
+                url = data.get("LICENSE_SERVER_URL")
+                if isinstance(url, str) and url.strip():
+                    return url.strip()
+        except Exception:
+            pass
+    return ""
+
+
 class LicenseClient:
     def __init__(self, base_url: str | None = None, timeout: float = 15.0) -> None:
-        self.base_url = (base_url or os.getenv("LICENSE_SERVER_URL", "")).rstrip("/")
+        import sys
+        url = base_url
+        release_url = _get_release_license_server_url()
+        if not url:
+            env_url = os.getenv("LICENSE_SERVER_URL", "").strip()
+            url = env_url if (env_url or not release_url) else release_url
+
+        self.base_url = url.rstrip("/")
         self.timeout = timeout
+        self.is_production = getattr(sys, "frozen", False) or bool(release_url)
 
     @property
     def required(self) -> bool:
+        if self.is_production:
+            return True
         return bool(self.base_url)
 
     def _post(self, path: str, payload: dict) -> dict:
@@ -130,9 +162,15 @@ class LicenseClient:
         token = str(data.get("activation_token", ""))
         if not token:
             return LicenseResult(False, "License server returned no activation token.")
+        expires_at = str(data.get("expires_at", ""))
+        activated_at = str(data.get("activated_at", ""))
         save_user_secret("LICENSE_KEY", license_key.strip())
         save_user_secret("LICENSE_ACTIVATION_TOKEN", token)
-        return LicenseResult(True, str(data.get("message", "License activated.")), str(data.get("plan", "")), str(data.get("expires_at", "")))
+        if expires_at:
+            save_user_secret("LICENSE_EXPIRES_AT", expires_at)
+        if activated_at:
+            save_user_secret("LICENSE_ACTIVATED_AT", activated_at)
+        return LicenseResult(True, str(data.get("message", "License activated.")), str(data.get("plan", "")), expires_at, activated_at)
 
     def request_email_otp(self, email: str) -> OtpResult:
         try:
@@ -172,7 +210,7 @@ class LicenseClient:
             return CheckoutResult(False, "Payment server returned no checkout URL.")
         return CheckoutResult(
             True,
-            "Bakong KHQR checkout created.",
+            str(data.get("message", "Payment request created.")),
             checkout_url,
             str(data.get("reference_id", "")),
             str(data.get("qr_string", "") or ""),
@@ -192,6 +230,17 @@ class LicenseClient:
         token = secrets.get("LICENSE_ACTIVATION_TOKEN", "")
         if not token:
             return LicenseResult(False, "Activate your subscription key before processing videos.")
+
+        local_expiry = secrets.get("LICENSE_EXPIRES_AT", "")
+        if local_expiry:
+            try:
+                from datetime import datetime, timezone
+                expiry_dt = datetime.fromisoformat(local_expiry)
+                if datetime.now(timezone.utc) > expiry_dt:
+                    return LicenseResult(False, "Your subscription has expired.")
+            except Exception:
+                pass
+
         try:
             data = self._post("/v1/licenses/validate", {
                 "activation_token": token,
@@ -199,4 +248,12 @@ class LicenseClient:
             })
         except RuntimeError as exc:
             return LicenseResult(False, str(exc))
-        return LicenseResult(bool(data.get("valid")), str(data.get("message", "")), str(data.get("plan", "")), str(data.get("expires_at", "")))
+
+        expires_at = str(data.get("expires_at", ""))
+        activated_at = str(data.get("activated_at", ""))
+        if expires_at:
+            save_user_secret("LICENSE_EXPIRES_AT", expires_at)
+        if activated_at:
+            save_user_secret("LICENSE_ACTIVATED_AT", activated_at)
+
+        return LicenseResult(bool(data.get("valid")), str(data.get("message", "")), str(data.get("plan", "")), expires_at, activated_at)

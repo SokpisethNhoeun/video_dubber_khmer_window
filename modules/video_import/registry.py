@@ -3,10 +3,13 @@ from __future__ import annotations
 import re
 
 from modules.video_import.base import VideoImportProvider
-from modules.video_import.providers import XiaohongshuProvider
+from modules.video_import.providers import XiaohongshuProvider, GenericYtDlpProvider
 
 _URL_RE = re.compile(r"https?://[^\s<>\"]+", re.IGNORECASE)
-_PROVIDERS: list[VideoImportProvider] = [XiaohongshuProvider()]
+_PROVIDERS: list[VideoImportProvider] = [
+    XiaohongshuProvider(),
+    GenericYtDlpProvider(),
+]
 
 
 def providers() -> list[VideoImportProvider]:

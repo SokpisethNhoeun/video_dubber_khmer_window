@@ -62,7 +62,7 @@ def _run_capture(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, capture_output=True, text=True, check=False)
 
 
-def _audio_stats(path: Path) -> tuple[float | None, float | None, float | None]:
+def _audio_stats(path: Path, cancel_event: Event | None = None) -> tuple[float | None, float | None, float | None]:
     ensure_ffmpeg()
     command = [
         "ffmpeg",
@@ -75,10 +75,7 @@ def _audio_stats(path: Path) -> tuple[float | None, float | None, float | None]:
         "null",
         "-",
     ]
-    result = _run_capture(command)
-    text = result.stderr
-    if result.returncode != 0:
-        raise FFmpegError(text.strip() or f"Could not analyze {path}")
+    text = _run_interruptible(command, cancel_event)
 
     peak_db = None
     rms_db = None
@@ -101,7 +98,7 @@ def _parse_stat_float(line: str) -> float | None:
         return None
 
 
-def validate_reference_audio(path: Path, min_seconds: float = 10.0) -> ReferenceValidation:
+def validate_reference_audio(path: Path, min_seconds: float = 10.0, cancel_event: Event | None = None) -> ReferenceValidation:
     resolved = path.expanduser()
     exists = resolved.exists()
     supported = resolved.suffix.lower() in SUPPORTED_REFERENCE_EXTENSIONS
@@ -116,7 +113,7 @@ def validate_reference_audio(path: Path, min_seconds: float = 10.0) -> Reference
 
     try:
         validation.duration = ffprobe_duration(resolved)
-        validation.peak_db, validation.rms_db, validation.dc_offset = _audio_stats(resolved)
+        validation.peak_db, validation.rms_db, validation.dc_offset = _audio_stats(resolved, cancel_event)
     except Exception as exc:
         validation.warnings.append(f"analysis failed: {exc}")
         return validation
@@ -144,7 +141,7 @@ def prepare_reference_audio(
     persistent_cache_dir: Path | None = None,
     cache_hits: dict[str, int] | None = None,
 ) -> tuple[Path | None, ReferenceValidation]:
-    validation = validate_reference_audio(input_audio, min_seconds)
+    validation = validate_reference_audio(input_audio, min_seconds, cancel_event=cancel_event)
     if not validation.exists or not validation.supported:
         return None, validation
 
@@ -260,19 +257,45 @@ def master_final_audio(
     return output_wav
 
 
-def _run_interruptible(command: list[str], cancel_event: Event | None) -> None:
+def _run_interruptible(command: list[str], cancel_event: Event | None) -> str:
     process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
     try:
+        import select
+        import io
         stderr = []
-        while process.poll() is None:
+        has_fileno = False
+        if process.stderr and hasattr(process.stderr, "fileno"):
+            try:
+                process.stderr.fileno()
+                has_fileno = True
+            except (io.UnsupportedOperation, AttributeError):
+                pass
+
+        while True:
             if cancel_event and cancel_event.is_set():
                 raise CancellationError("Processing cancelled by user")
-            try:
-                line = process.stderr.readline() if process.stderr else ""
-            except Exception:
-                line = ""
-            if line:
-                stderr.append(line)
+            
+            if has_fileno and process.stderr:
+                ready, _, _ = select.select([process.stderr], [], [], 0.1)
+                if ready:
+                    line = process.stderr.readline()
+                    if not line:
+                        break
+                    if line:
+                        stderr.append(line)
+                else:
+                    if process.poll() is not None:
+                        break
+            else:
+                if process.stderr:
+                    line = process.stderr.readline()
+                    if not line:
+                        break
+                    if line:
+                        stderr.append(line)
+                else:
+                    if process.poll() is not None:
+                        break
     except Exception:
         process.terminate()
         try:
@@ -286,5 +309,7 @@ def _run_interruptible(command: list[str], cancel_event: Event | None) -> None:
         remaining = process.stderr.read()
         if remaining:
             stderr.append(remaining)
+    process.wait()
     if process.returncode != 0:
         raise FFmpegError("".join(stderr).strip() or f"Command failed: {' '.join(command)}")
+    return "".join(stderr)

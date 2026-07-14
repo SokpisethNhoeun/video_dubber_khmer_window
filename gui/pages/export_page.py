@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QPainter, QColor, QFont, QPen
+from PyQt6.QtGui import QPainter, QColor, QFont, QPen, QLinearGradient, QPainterPath
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPushButton,
+    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -109,6 +110,102 @@ class OverlayPositionPicker(QWidget):
             self.selected = f"{row}_{col}"
 
 
+class SubtitlePreviewWidget(QWidget):
+    """Visual preview of burned-in subtitle styles (font family, size, color, bg box)."""
+
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setFixedSize(300, 160)
+        self._font_name = "Noto Sans Khmer"
+        self._font_size = 24
+        self._color = "white"
+        self._bg_opacity = 0.0
+
+    def update_style(self, font_name: str, font_size: int, color: str, bg_opacity: float) -> None:
+        self._font_name = font_name
+        self._font_size = font_size
+        self._color = color
+        self._bg_opacity = bg_opacity
+        self.update()
+
+    def paintEvent(self, event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        w, h = self.width(), self.height()
+
+        # Premium video placeholder background (gradient representing a video frame)
+        gradient = QLinearGradient(0.0, 0.0, float(w), float(h))
+        gradient.setColorAt(0.0, QColor("#1a1a2e"))
+        gradient.setColorAt(1.0, QColor("#161622"))
+        p.setBrush(gradient)
+        p.setPen(QPen(QColor("#444"), 1))
+        p.drawRoundedRect(0, 0, w - 1, h - 1, 8, 8)
+
+        # Draw a stylized play button or mock video frame element
+        p.setBrush(QColor("#7c3aed"))
+        p.setPen(Qt.PenStyle.NoPen)
+        play_path = QPainterPath()
+        cx, cy = w // 2, h // 2 - 15
+        play_path.moveTo(cx - 10, cy - 12)
+        play_path.lineTo(cx + 14, cy)
+        play_path.lineTo(cx - 10, cy + 12)
+        play_path.closeSubpath()
+        p.drawPath(play_path)
+
+        # Draw "Video Preview" text in top left
+        p.setPen(QColor("#888"))
+        font_lbl = QFont("sans-serif", 9)
+        p.setFont(font_lbl)
+        p.drawText(12, 22, "Live Subtitle Preview")
+
+        # Subtitle Text Config
+        text = "សួស្តី! នេះគឺជាការសាកល្បងអក្សររត់រង។"
+        
+        # Color Mapping
+        color_map = {
+            "white": QColor("#FFFFFF"),
+            "yellow": QColor("#FFFF00"),
+            "green": QColor("#00FF00"),
+            "cyan": QColor("#00FFFF"),
+            "red": QColor("#FF0000"),
+            "blue": QColor("#0000FF"),
+        }
+        text_color = color_map.get(self._color.lower(), QColor("#FFFFFF"))
+
+        # Scale subtitle font size for preview box (e.g. max size 18 for display comfort)
+        scaled_size = max(10, min(18, int(self._font_size * 0.6)))
+        sub_font = QFont(self._font_name, scaled_size)
+        p.setFont(sub_font)
+
+        # Compute text size for background box
+        fm = p.fontMetrics()
+        text_w = fm.horizontalAdvance(text)
+        text_h = fm.height()
+        
+        pad_x = 10
+        pad_y = 6
+        box_w = text_w + pad_x * 2
+        box_h = text_h + pad_y * 2
+        box_x = (w - box_w) // 2
+        box_y = h - box_h - 16
+
+        # Draw background box if opacity > 0
+        if self._bg_opacity > 0.0:
+            alpha = int(self._bg_opacity * 255)
+            p.setBrush(QColor(0, 0, 0, alpha))
+            p.setPen(Qt.PenStyle.NoPen)
+            p.drawRoundedRect(box_x, box_y, box_w, box_h, 4, 4)
+        else:
+            # Draw standard subtitle shadow/outline manually for clean visuals
+            p.setPen(QColor(0, 0, 0, 180))
+            p.drawText(box_x + 1, box_y + pad_y + fm.ascent() + 1, text)
+
+        # Draw subtitle text
+        p.setPen(text_color)
+        p.drawText(box_x, box_y + pad_y + fm.ascent(), text)
+        p.end()
+
+
 class ExportPage(QWidget):
     save_defaults_requested = pyqtSignal()
 
@@ -191,6 +288,59 @@ class ExportPage(QWidget):
         self.subtitle_font_size.setRange(12, 60)
         self.subtitle_font_size.setValue(24)
         form.addRow("Font size", self.subtitle_font_size)
+
+        self.subtitle_font_name = QComboBox()
+        self.subtitle_font_name.addItem("Noto Sans Khmer", "Noto Sans Khmer")
+        self.subtitle_font_name.addItem("Kantumruy Pro", "Kantumruy Pro")
+        self.subtitle_font_name.addItem("Bokor", "Bokor")
+        self.subtitle_font_name.addItem("Arial", "Arial")
+        self.subtitle_font_name.setCurrentText("Noto Sans Khmer")
+        form.addRow("Font family", self.subtitle_font_name)
+
+        self.subtitle_color = QComboBox()
+        self.subtitle_color.addItem("White", "white")
+        self.subtitle_color.addItem("Yellow", "yellow")
+        self.subtitle_color.addItem("Green", "green")
+        self.subtitle_color.addItem("Cyan", "cyan")
+        self.subtitle_color.addItem("Red", "red")
+        self.subtitle_color.addItem("Blue", "blue")
+        self.subtitle_color.setCurrentText("White")
+        form.addRow("Text color", self.subtitle_color)
+
+        opacity_layout = QHBoxLayout()
+        self.subtitle_bg_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.subtitle_bg_opacity_slider.setRange(0, 100)
+        self.subtitle_bg_opacity_slider.setValue(0)
+        self.subtitle_bg_opacity = QDoubleSpinBox()
+        self.subtitle_bg_opacity.setRange(0.0, 1.0)
+        self.subtitle_bg_opacity.setValue(0.0)
+        self.subtitle_bg_opacity.setSingleStep(0.05)
+        self.subtitle_bg_opacity_slider.valueChanged.connect(
+            lambda val: self.subtitle_bg_opacity.setValue(val / 100.0)
+        )
+        self.subtitle_bg_opacity.valueChanged.connect(
+            lambda val: self.subtitle_bg_opacity_slider.setValue(int(val * 100.0))
+        )
+        opacity_layout.addWidget(self.subtitle_bg_opacity_slider, 1)
+        opacity_layout.addWidget(self.subtitle_bg_opacity)
+        form.addRow("Background opacity", opacity_layout)
+
+        self.subtitle_preview = SubtitlePreviewWidget()
+        form.addRow("Style preview", self.subtitle_preview)
+
+        def update_preview():
+            self.subtitle_preview.update_style(
+                self.subtitle_font_name.currentText(),
+                self.subtitle_font_size.value(),
+                self.subtitle_color.currentText(),
+                self.subtitle_bg_opacity.value()
+            )
+
+        self.subtitle_font_name.currentIndexChanged.connect(update_preview)
+        self.subtitle_font_size.valueChanged.connect(update_preview)
+        self.subtitle_color.currentIndexChanged.connect(update_preview)
+        self.subtitle_bg_opacity.valueChanged.connect(update_preview)
+        update_preview()
 
         sep2 = QLabel("")
         form.addRow(sep2)
@@ -284,6 +434,9 @@ class ExportPage(QWidget):
             "burn_subtitles": self.burn_subtitles_check.isChecked(),
             "subtitle_language": self.subtitle_language.currentText(),
             "subtitle_font_size": self.subtitle_font_size.value(),
+            "subtitle_font_name": self.subtitle_font_name.currentText(),
+            "subtitle_color": self.subtitle_color.currentText(),
+            "subtitle_bg_opacity": self.subtitle_bg_opacity.value(),
             "overlay_text": self.overlay_text.text().strip(),
             "overlay_image_path": self.overlay_image_path.text().strip(),
             "overlay_position": self.overlay_text_position_picker.selected,
@@ -308,6 +461,9 @@ class ExportPage(QWidget):
         self.burn_subtitles_check.setChecked(config.get("burn_subtitles", False))
         self.subtitle_language.setCurrentText(config.get("subtitle_language", ""))
         self.subtitle_font_size.setValue(config.get("subtitle_font_size", 24))
+        self.subtitle_font_name.setCurrentText(config.get("subtitle_font_name", "Noto Sans Khmer"))
+        self.subtitle_color.setCurrentText(config.get("subtitle_color", "White"))
+        self.subtitle_bg_opacity.setValue(config.get("subtitle_bg_opacity", 0.0))
         self.overlay_text.setText(config.get("overlay_text", ""))
         self.overlay_image_path.setText(config.get("overlay_image_path", ""))
         legacy_position = config.get("overlay_position", "bottom_right")

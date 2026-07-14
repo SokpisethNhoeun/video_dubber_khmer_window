@@ -669,6 +669,63 @@ QScrollBar::add-line:vertical,
 QScrollBar::sub-line:vertical {{
     height: 0px;
 }}
+QScrollBar:horizontal {{
+    background: transparent;
+    height: 10px;
+    margin: 0px;
+}}
+QScrollBar::handle:horizontal {{
+    background: {scrollbar_handle};
+    border-radius: 5px;
+    min-width: 36px;
+}}
+QScrollBar::handle:horizontal:hover {{
+    background: {scrollbar_handle_hover};
+}}
+QScrollBar::add-line:horizontal,
+QScrollBar::sub-line:horizontal {{
+    width: 0px;
+}}
+/* ── Table Widget ───────────────────────────────────────────── */
+QTableWidget, QTableView {{
+    background-color: {bg_panel};
+    gridline-color: {border};
+    border: 1px solid {border};
+    border-radius: 8px;
+    selection-background-color: {accent_sel};
+    selection-color: {white};
+    padding: 4px;
+}}
+QHeaderView::section {{
+    background-color: {bg_control};
+    color: {text_label};
+    padding: 8px 12px;
+    border: 0px;
+    border-bottom: 1.5px solid {border};
+    border-right: 1px solid {border};
+    font-weight: 700;
+    font-size: 11px;
+}}
+QHeaderView::section:horizontal {{
+    border-top: 0px;
+}}
+QHeaderView::section:vertical {{
+    border-left: 0px;
+}}
+QTableWidget QTableCornerButton::section {{
+    background-color: {bg_control};
+    border: 0px;
+    border-bottom: 1.5px solid {border};
+    border-right: 1px solid {border};
+}}
+QTableWidget::item {{
+    padding: 8px 10px;
+    border-bottom: 1px solid {border};
+}}
+QTableWidget::item:selected {{
+    background-color: {accent_sel};
+    color: {white};
+}}
 QMessageBox {{
     background: {bg_msg_box};
 }}

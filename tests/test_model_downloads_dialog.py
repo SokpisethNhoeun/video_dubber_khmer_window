@@ -23,7 +23,7 @@ def test_download_dialog_lists_managed_models(monkeypatch) -> None:
     dialog = ModelDownloadsDialog()
 
     assert set(dialog._rows) == {
-        "small", "medium", "large-v3", "nllb", "qwen3", "cosyvoice"
+        "tiny", "base", "small", "medium", "large-v3", "nllb", "qwen3", "cosyvoice"
     }
     assert dialog.windowTitle() == "Model Downloads"
     dialog.close()

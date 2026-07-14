@@ -150,11 +150,11 @@ class DubbingPipeline:
                     self.context.quality_report.cache_hits,
                 )
             except Exception as exc:
-                validation = validate_reference_audio(reference_path, settings.min_reference_seconds)
+                validation = validate_reference_audio(reference_path, settings.min_reference_seconds, cancel_event=self.context.cancel_event)
                 cleaned_path = validation.path if validation.exists and validation.supported else None
                 validation.warnings.append(f"cleanup failed; using original audio: {exc}")
         else:
-            validation = validate_reference_audio(reference_path, settings.min_reference_seconds)
+            validation = validate_reference_audio(reference_path, settings.min_reference_seconds, cancel_event=self.context.cancel_event)
             cleaned_path = validation.path if validation.exists and validation.supported else None
 
         if not validation.exists:
@@ -1155,6 +1155,9 @@ class DubbingPipeline:
                 segments=segments if settings.burn_subtitles else None,
                 subtitle_language=settings.subtitle_language,
                 subtitle_font_size=settings.subtitle_font_size,
+                subtitle_font_name=settings.subtitle_font_name,
+                subtitle_color=settings.subtitle_color,
+                subtitle_bg_opacity=settings.subtitle_bg_opacity,
                 overlay_text=settings.overlay_text,
                 overlay_image_path=settings.overlay_image_path,
                 overlay_position=settings.overlay_position,

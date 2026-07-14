@@ -297,7 +297,7 @@ def _clone_batch_qwen3(
         log_cb(f"  Qwen3-TTS batch-cloning {len(batch_items)} segments for {label}")
 
     try:
-        results = clone_batch(batch_items, reference_path, log_cb=log_cb)
+        results = clone_batch(batch_items, reference_path, log_cb=log_cb, cancel_event=cancel_event)
     except Qwen3CloneError as exc:
         msg = f"Qwen3-TTS batch failed for {label}: {str(exc)[:300]}"
         if quality_report is not None:
@@ -372,7 +372,7 @@ def _clone_batch_xtts(
         log_cb(f"  XTTS batch-cloning {len(batch_items)} segments for {label}")
 
     try:
-        results = clone_batch(batch_items, reference_path, log_cb=log_cb)
+        results = clone_batch(batch_items, reference_path, log_cb=log_cb, cancel_event=cancel_event)
     except XTTSCloneError as exc:
         msg = f"XTTS batch failed for {label}: {str(exc)[:300]}"
         if quality_report is not None:
@@ -453,7 +453,7 @@ def _clone_batch_cosyvoice(
         log_cb(f"  CosyVoice batch-cloning {len(batch_items)} segments for {label}")
 
     try:
-        results = clone_batch(batch_items, reference_path, log_cb=log_cb)
+        results = clone_batch(batch_items, reference_path, log_cb=log_cb, cancel_event=cancel_event)
     except CosyVoiceCloneError as exc:
         msg = f"CosyVoice batch failed for {label}: {str(exc)[:300]}"
         if quality_report is not None:
@@ -524,7 +524,7 @@ def _clone_batch_openvoice(
         log_cb(f"  Batch-cloning {len(batch_items)} segments for {label} (single subprocess)")
 
     try:
-        results = clone_batch_openvoice(batch_items, reference_path)
+        results = clone_batch_openvoice(batch_items, reference_path, log_cb=log_cb, cancel_event=cancel_event)
     except OpenVoiceCloneError as exc:
         msg = f"OpenVoice batch failed for {label}: {str(exc)[:300]}"
         if quality_report is not None:

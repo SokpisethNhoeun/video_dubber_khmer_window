@@ -73,18 +73,32 @@ class HuggingFaceModelDownloadManager:
         for filename, expected_size in files:
             if self._cancel.is_set():
                 raise DownloadCancelled()
-            url = f"https://huggingface.co/{self.repo_id}/resolve/main/{filename}"
+            hf_endpoint = os.getenv("HF_ENDPOINT", "https://huggingface.co").rstrip("/")
+            url = f"{hf_endpoint}/{self.repo_id}/resolve/main/{filename}"
             part = blobs / (filename.replace("/", "--") + ".part")
             self._parts.add(part)
             offset = part.stat().st_size if part.exists() else 0
             headers = {"Range": f"bytes={offset}-"} if offset else {}
-            with requests.get(url, headers=headers, stream=True, timeout=(10, 30), allow_redirects=True) as response:
+            response = requests.get(url, headers=headers, stream=True, timeout=(10, 30), allow_redirects=True)
+            if response.status_code == 416:
+                response.close()
+                part.unlink(missing_ok=True)
+                offset = 0
+                headers = {}
+                response = requests.get(url, headers=headers, stream=True, timeout=(10, 30), allow_redirects=True)
+
+            with response:
                 response.raise_for_status()
                 if offset and response.status_code != 206:
                     offset = 0
                     part.unlink(missing_ok=True)
                 commit = response.headers.get("X-Repo-Commit", commit)
-                etag = response.headers.get("ETag", "").strip('"') or filename.replace("/", "--")
+                etag = response.headers.get("ETag", "").strip('"')
+                if etag.startswith("W/"):
+                    etag = etag[2:].strip('"')
+                etag = etag.replace('"', '')
+                if not etag:
+                    etag = filename.replace("/", "--")
                 final_blob = blobs / etag
                 if final_blob.exists() and (not expected_size or final_blob.stat().st_size == expected_size):
                     downloaded_before += expected_size

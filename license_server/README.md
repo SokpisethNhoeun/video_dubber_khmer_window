@@ -1,36 +1,51 @@
-# Hosted license service
+# Hosted license and admin service
 
-This service keeps paid license state off the downloadable desktop app. A key
-is bound to one device on first activation. The desktop app validates the
-activation before starting a video job.
+The FastAPI service owns licenses, admin sessions, email verification, manual
+payment records, and audit history. Existing SQLite databases are migrated at
+startup without replacing legacy expiration dates. New subscriptions begin
+their plan duration on first activation.
 
-Plans are fixed at USD 11.99 monthly, USD 59.99 for six months, and USD 99.99
-yearly. Run behind HTTPS in production.
+## Development
 
 ```bash
-python -m venv .venv
-.venv/bin/pip install -r license_server/requirements.txt
-LICENSE_ADMIN_TOKEN='replace-with-a-long-random-secret' \
-LICENSE_DB_PATH=/var/lib/khmer-video-dubber/licenses.db \
-.venv/bin/uvicorn license_server.app:app --host 0.0.0.0 --port 8080
+python -m pip install -r license_server/requirements.txt
+LICENSE_DB_PATH=/tmp/kvd-licenses.db \
+ADMIN_BOOTSTRAP_EMAIL=owner@example.com \
+ADMIN_BOOTSTRAP_PASSWORD='replace-with-a-long-random-password' \
+uvicorn license_server.app:app --host 127.0.0.1 --port 8080
 ```
 
-Set `LICENSE_SERVER_URL=https://license.your-domain.example` in the packaged
-desktop app. When it is absent, the source checkout runs in development mode.
+The bootstrap account is created only when no admin exists. Remove its password
+from the runtime environment after the initial startup. `LICENSE_ADMIN_TOKEN`
+remains supported for old automation, but individual admin sessions are
+recommended because they provide roles and audit attribution.
 
-After a successful payment webhook, your payment backend should call:
+## SMTP
 
-```http
-POST /v1/admin/licenses
-Authorization: Bearer <LICENSE_ADMIN_TOKEN>
-Content-Type: application/json
+Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
+`SMTP_FROM`, and `SMTP_TLS`. OTP and license delivery fail safely when SMTP is
+not configured. Credentials belong only on the hosted server.
 
-{"plan":"monthly"}
+## Payments
+
+This repository does not integrate an external payment gateway. Checkout
+creates a `waiting` payment reference. An owner or finance admin must verify the
+payment outside this system and confirm it in the dashboard. Confirmation is
+one-time, creates the license, and emails the key. Never confirm a payment based
+only on a customer-provided screenshot.
+
+## Admin dashboard
+
+```bash
+cd admin_web
+cp .env.example .env.local
+npm install
+npm run dev
 ```
 
-Email the returned license key to the buyer. Do not call the admin endpoint
-from the desktop app and never bundle `LICENSE_ADMIN_TOKEN` with downloads.
+`API_BASE_URL` is server-only. The dashboard stores the admin session in an
+HTTP-only cookie and calls the backend through Server Actions and server-side
+services; browser components never receive backend credentials.
 
-Before public launch, add your payment provider's signed webhook, email
-delivery, admin device reset/revoke endpoints, rate limiting, database backups,
-and a privacy policy describing the hashed device identifier.
+For production, use HTTPS, a reverse proxy, encrypted backups, centralized
+rate limiting, and PostgreSQL before scaling to multiple API instances.

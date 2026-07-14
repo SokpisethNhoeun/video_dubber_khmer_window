@@ -204,6 +204,8 @@ def clone_batch_openvoice(
     segments: list[dict],
     reference_path: Path,
     device: str = "auto",
+    log_cb=None,
+    cancel_event=None,
 ) -> list[dict]:
     """Clone multiple segments in one subprocess, sharing the same target_se.
 
@@ -230,12 +232,59 @@ def clone_batch_openvoice(
         manifest_path = Path(f.name)
 
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             [python, "-c", OPENVOICE_BATCH_SCRIPT, str(manifest_path)],
-            capture_output=True, text=True, check=False,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
         )
-        if result.returncode != 0:
-            detail = (result.stderr or result.stdout or "").strip()
+        output_lines = []
+        if process.stdout:
+            import select
+            import io
+            from core.context import CancellationError
+            has_fileno = False
+            if hasattr(process.stdout, "fileno"):
+                try:
+                    process.stdout.fileno()
+                    has_fileno = True
+                except (io.UnsupportedOperation, AttributeError):
+                    pass
+
+            while True:
+                if cancel_event and cancel_event.is_set():
+                    process.terminate()
+                    process.wait(timeout=5)
+                    raise CancellationError("OpenVoice batch cloning cancelled by user")
+                
+                if has_fileno:
+                    ready, _, _ = select.select([process.stdout], [], [], 0.1)
+                    if ready:
+                        line = process.stdout.readline()
+                        if not line:
+                            break
+                        line_str = line.strip()
+                        if line_str:
+                            output_lines.append(line_str)
+                            if log_cb:
+                                log_cb(f"      [OpenVoice] {line_str}")
+                    else:
+                        if process.poll() is not None:
+                            break
+                else:
+                    line = process.stdout.readline()
+                    if not line:
+                        break
+                    line_str = line.strip()
+                    if line_str:
+                        output_lines.append(line_str)
+                        if log_cb:
+                            log_cb(f"      [OpenVoice] {line_str}")
+        
+        process.wait(timeout=max(600, len(segments) * 60))
+        if process.returncode != 0:
+            detail = "\n".join(output_lines)
             if len(detail) > 1600:
                 detail = detail[-1600:]
             raise OpenVoiceCloneError(detail or "OpenVoice batch conversion failed.")

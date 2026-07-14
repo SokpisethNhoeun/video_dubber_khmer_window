@@ -31,8 +31,14 @@ from gui.workers import GeminiValidationWorker, ModelDownloadWorker
 from modules import gemini_key_validator
 from modules.model_downloader import ModelDownloadManager
 
-STEP_TITLES = ["Verify Gmail", "Buy Subscription", "Activate License", "Gemini Key", "Download Models"]
-MODEL_PRESETS = [("small", "Fast", "Best for quick drafts"), ("medium", "Balanced", "Recommended quality and speed"), ("large-v3", "Best", "Highest transcription accuracy")]
+STEP_TITLES = ["Activate License", "Verify Gmail", "Buy Subscription", "Gemini Key", "Download Models"]
+MODEL_PRESETS = [
+    ("tiny", "Tiny", "Ultra-fast (~75MB download, ~1GB RAM/VRAM, CPU-friendly)"),
+    ("base", "Lightweight", "Best for low-end laptops (~140MB download, ~1.5GB RAM/VRAM)"),
+    ("small", "Fast", "Best for quick drafts (~460MB download, ~2GB RAM/VRAM)"),
+    ("medium", "Balanced", "Recommended quality (~1.5GB download, ~5GB RAM/VRAM)"),
+    ("large-v3", "Best", "Highest accuracy (~3.0GB download, ~8GB RAM/VRAM, high-spec GPU)"),
+]
 
 PLAN_DEFINITIONS = [
     ("monthly", "Monthly", "$11.99", ["Full pipeline access", "Cancel anytime", "1 device license"], False),
@@ -41,19 +47,70 @@ PLAN_DEFINITIONS = [
 ]
 
 
+class StartupValidationDialog(QDialog):
+    def __init__(self, parent=None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Initializing Khmer Video Dubber")
+        self.setModal(True)
+        self.setFixedWidth(420)
+        self.setFixedHeight(160)
+        self.success = False
+        self.message = ""
+
+        # Apply app theme stylesheet if active
+        try:
+            from gui.theme import get_saved_theme, build_stylesheet
+            self.setStyleSheet(build_stylesheet(get_saved_theme()))
+        except Exception:
+            pass
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+
+        self.label = QLabel("Verifying licensing and API keys...")
+        self.label.setWordWrap(True)
+        self.label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.label.setStyleSheet("font-size: 13px; font-weight: 600;")
+        layout.addWidget(self.label)
+
+        self.progress = QProgressBar()
+        self.progress.setRange(0, 0)  # Indeterminate spinner
+        self.progress.setTextVisible(False)
+        self.progress.setFixedHeight(8)
+        layout.addWidget(self.progress)
+
+        self.thread = QThread()
+        from gui.workers import StartupValidationWorker
+        self.worker = StartupValidationWorker()
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self._on_finished)
+        self.thread.start()
+
+    def _on_finished(self, success: bool, message: str) -> None:
+        self.success = success
+        self.message = message
+        self.thread.quit()
+        self.thread.wait()
+        if success:
+            self.accept()
+        else:
+            self.reject()
+
+    def closeEvent(self, event) -> None:
+        if self.thread.isRunning():
+            self.thread.quit()
+            self.thread.wait()
+        super().closeEvent(event)
+
+
 def validate_saved_startup_access() -> tuple[bool, str]:
     """Validate returning-customer access before constructing the main window."""
-    client = LicenseClient()
-    if not client.required:
-        return False, "This app build is missing LICENSE_SERVER_URL."
-    license_result = client.validate()
-    if not license_result.valid:
-        return False, "No active license is available yet. Verify Gmail, purchase, then activate your key."
-    gemini_key = os.getenv("GEMINI_API_KEY", "").strip()
-    valid_key, key_message = gemini_key_validator.validate_gemini_api_key(gemini_key)
-    if not valid_key:
-        return False, key_message
-    return True, "Subscription and Gemini API key are valid."
+    dialog = StartupValidationDialog()
+    if dialog.exec() == QDialog.DialogCode.Accepted:
+        return True, dialog.message
+    return False, dialog.message
 
 
 class AccessOnboardingDialog(QDialog):
@@ -64,6 +121,16 @@ class AccessOnboardingDialog(QDialog):
         self.setMinimumWidth(620)
         self.resize(700, 620)
         self._license_valid = False
+        secrets = load_user_secrets()
+        if secrets.get("LICENSE_ACTIVATION_TOKEN"):
+            try:
+                client = LicenseClient()
+                if client.required:
+                    client.timeout = 3.0
+                    res = client.validate()
+                    self._license_valid = res.valid
+            except Exception:
+                pass
         self._gemini_valid = False
         self._checkout_created = False
         self._payment_confirmed = False
@@ -83,8 +150,15 @@ class AccessOnboardingDialog(QDialog):
         self._payment_poll_timer.timeout.connect(self._poll_payment_status)
 
         root = QVBoxLayout(self)
-        root.setContentsMargins(24, 24, 24, 24)
-        root.setSpacing(16)
+        root.setContentsMargins(32, 32, 32, 32)
+        root.setSpacing(20)
+
+        # Apply app theme stylesheet if active
+        try:
+            from gui.theme import get_saved_theme, build_stylesheet
+            self.setStyleSheet(build_stylesheet(get_saved_theme()))
+        except Exception:
+            pass
 
         title = QLabel("Khmer Video Dubber by NhoeunSokpiseth")
         title.setStyleSheet("font-size: 20px; font-weight: 700;")
@@ -101,9 +175,9 @@ class AccessOnboardingDialog(QDialog):
         root.addWidget(self.stepper)
 
         self.page_stack = QStackedWidget()
+        self.page_stack.addWidget(self._build_step_activate())
         self.page_stack.addWidget(self._build_step_gmail())
         self.page_stack.addWidget(self._build_step_buy())
-        self.page_stack.addWidget(self._build_step_activate())
         self.page_stack.addWidget(self._build_step_gemini())
         self.page_stack.addWidget(self._build_step_models())
         root.addWidget(self.page_stack, 1)
@@ -266,6 +340,11 @@ class AccessOnboardingDialog(QDialog):
         key_row.addWidget(paste_license)
         form.addRow("License key", key_row)
         form.addRow("", self.activate_button)
+        self.register_button = QPushButton("Don't have a license key? Register & Buy here")
+        self.register_button.setObjectName("SecondaryButton")
+        self.register_button.setIcon(themed_icon("mdi.cart-outline"))
+        self.register_button.clicked.connect(lambda: self._go_to_step(1))
+        form.addRow("", self.register_button)
         form.addRow("", self.license_status)
         layout.addWidget(form_widget)
         layout.addStretch(1)
@@ -357,12 +436,15 @@ class AccessOnboardingDialog(QDialog):
     # ------------------------------------------------------------------
     def _completed_steps(self) -> set[int]:
         completed = set()
-        if self._email_verification_token:
-            completed.add(0)
-        if self._payment_confirmed:
-            completed.add(1)
         if self._license_valid:
+            completed.add(0)
+            completed.add(1)
             completed.add(2)
+        else:
+            if self._email_verification_token:
+                completed.add(1)
+            if self._payment_confirmed:
+                completed.add(2)
         if self._gemini_valid:
             completed.add(3)
         if self._models_ready:
@@ -371,6 +453,11 @@ class AccessOnboardingDialog(QDialog):
 
     def _go_to_step(self, index: int) -> None:
         index = max(0, min(index, self.page_stack.count() - 1))
+        if self._license_valid and (index == 1 or index == 2):
+            if self.page_stack.currentIndex() == 0:
+                index = 3
+            else:
+                index = 0
         if index != self.page_stack.currentIndex():
             self.page_stack.setCurrentIndex(index)
             effect = self.page_stack.currentWidget().graphicsEffect()
@@ -406,12 +493,18 @@ class AccessOnboardingDialog(QDialog):
             )
 
     def _go_back(self) -> None:
-        self._go_to_step(self.stepper.current() - 1)
+        index = self.stepper.current()
+        if index == 3 and self._license_valid:
+            self._go_to_step(0)
+        else:
+            self._go_to_step(index - 1)
 
     def _go_next(self) -> None:
         index = self.stepper.current()
         if index == self.page_stack.count() - 1:
             self._open_app()
+        elif index == 0 and self._license_valid:
+            self._go_to_step(3)
         else:
             self._go_to_step(index + 1)
 
@@ -471,6 +564,7 @@ class AccessOnboardingDialog(QDialog):
             return
         self.buy_button.setEnabled(False)
         self.buy_button.setText("Creating checkout...")
+        QApplication.processEvents()
         result = client.create_checkout(email, self._selected_plan, self._email_verification_token)
         self.buy_button.setText("Buy with Bakong KHQR")
         if not result.created:
@@ -487,10 +581,14 @@ class AccessOnboardingDialog(QDialog):
             self.qr_label.setVisible(True)
         self.payment_status_chip.setVisible(True)
         self._set_payment_status_chip("waiting", "Waiting for payment")
+        payment_help = (
+            "Scan the QR code with your Bakong-enabled banking app. "
+            if result.qr_string else
+            "Open the payment page and follow the current payment instructions. "
+        )
         self._set_inline_feedback(
             self.buy_status,
-            "Scan the QR code with your Bakong-enabled banking app. "
-            "This page updates automatically once payment is confirmed.",
+            payment_help + "This page updates automatically once payment is confirmed.",
             True,
         )
         self.stepper.set_completed(self._completed_steps())
@@ -509,8 +607,8 @@ class AccessOnboardingDialog(QDialog):
             self._set_payment_status_chip("done", "Paid")
             self._set_inline_feedback(self.buy_status, result.message, True)
             self.stepper.set_completed(self._completed_steps())
-            if self.stepper.current() == 1:
-                self._go_to_step(2)
+            if self.stepper.current() == 2:
+                self._go_to_step(0)
         else:
             self._set_payment_status_chip("waiting", "Waiting for payment")
 
@@ -524,13 +622,16 @@ class AccessOnboardingDialog(QDialog):
             return
         self.send_otp_button.setEnabled(False)
         self.send_otp_button.setText("Sending OTP...")
-        result = client.request_email_otp(email)
-        self._set_inline_feedback(self.email_status, result.message, result.success)
-        if result.success:
-            self._start_otp_cooldown(result.resend_after_seconds or 60)
-        else:
-            self.send_otp_button.setEnabled(True)
-            self.send_otp_button.setText("Send Gmail OTP")
+        QApplication.processEvents()
+        try:
+            result = client.request_email_otp(email)
+            self._set_inline_feedback(self.email_status, result.message, result.success)
+            if result.success:
+                self._start_otp_cooldown(result.resend_after_seconds or 60)
+        finally:
+            if not self._otp_timer.isActive():
+                self.send_otp_button.setEnabled(True)
+                self.send_otp_button.setText("Send Gmail OTP")
 
     def _start_otp_cooldown(self, seconds: int) -> None:
         self._otp_cooldown_remaining = seconds
@@ -575,27 +676,48 @@ class AccessOnboardingDialog(QDialog):
         client = self._client()
         if client is None:
             return
-        result = client.verify_email_otp(self.email.text(), self.otp_code.text())
-        self._set_inline_feedback(self.email_status, result.message, result.success)
-        self._email_verification_token = result.verification_token if result.success else ""
-        self.buy_button.setEnabled(result.success)
-        if result.success:
-            self._otp_timer.stop()
-            self.buy_status.setText("Gmail verified. Choose a plan and buy with Bakong KHQR.")
-            self.buy_status.setStyleSheet("")
-        self.stepper.set_completed(self._completed_steps())
+        self.verify_otp_button.setEnabled(False)
+        self.verify_otp_button.setText("Verifying...")
+        QApplication.processEvents()
+        try:
+            result = client.verify_email_otp(self.email.text(), self.otp_code.text())
+            self._set_inline_feedback(self.email_status, result.message, result.success)
+            self._email_verification_token = result.verification_token if result.success else ""
+            self.buy_button.setEnabled(result.success)
+            if result.success:
+                self._otp_timer.stop()
+                self.buy_status.setText("Gmail verified. Choose a plan and buy with Bakong KHQR.")
+                self.buy_status.setStyleSheet("")
+            self.stepper.set_completed(self._completed_steps())
+        finally:
+            self.verify_otp_button.setEnabled(True)
+            self.verify_otp_button.setText("Verify")
 
     def _activate(self) -> None:
         client = self._client()
         if client is None:
             return
-        result = client.activate(self.license_key.text())
-        self._license_valid = result.valid
-        if result.valid:
-            self._set_inline_feedback(self.license_status, f"Activated. Plan: {result.plan}; expires: {result.expires_at}", True)
-        else:
-            self._set_inline_feedback(self.license_status, result.message, False)
-        self._refresh_open_button()
+        self.activate_button.setEnabled(False)
+        self.activate_button.setText("Activating...")
+        QApplication.processEvents()
+        try:
+            result = client.activate(self.license_key.text())
+            self._license_valid = result.valid
+            if result.valid:
+                self._set_inline_feedback(self.license_status, f"Activated. Plan: {result.plan}; expires: {result.expires_at}", True)
+                QMessageBox.information(
+                    self,
+                    "Activation Successful",
+                    "License activated successfully! Gmail and purchase steps are skipped."
+                )
+                if self.stepper.current() == 0:
+                    self._go_to_step(3)
+            else:
+                self._set_inline_feedback(self.license_status, result.message, False)
+            self._refresh_open_button()
+        finally:
+            self.activate_button.setEnabled(True)
+            self.activate_button.setText("Activate on This Laptop")
 
     def _test_gemini(self) -> None:
         key = self.gemini_key.text().strip()
@@ -700,16 +822,20 @@ class AccessOnboardingDialog(QDialog):
         self._set_inline_feedback(self.model_status, message, False)
 
     def _all_ready(self) -> bool:
-        return bool(self._email_verification_token and self._payment_confirmed and self._license_valid and self._gemini_valid and self._models_ready)
+        if self._license_valid:
+            return bool(self._gemini_valid and self._models_ready)
+        return bool(self._email_verification_token and self._payment_confirmed and self._gemini_valid and self._models_ready)
 
     def _refresh_open_button(self) -> None:
         ready = self._all_ready()
         self.open_button.setEnabled(ready)
-        self.overall_status.setText(
-            "All requirements passed. You can open the project."
-            if ready
-            else "Gmail, payment, license, Gemini, and the Whisper model are all required."
-        )
+        if ready:
+            self.overall_status.setText("All requirements passed. You can open the project.")
+        else:
+            if self._license_valid:
+                self.overall_status.setText("License is active. Gemini API key and Whisper model download are required.")
+            else:
+                self.overall_status.setText("License activation (or Gmail verification + payment), Gemini API key, and Whisper model are required.")
         self.stepper.set_completed(self._completed_steps())
         self._sync_nav_bar()
 
@@ -718,12 +844,12 @@ class AccessOnboardingDialog(QDialog):
         if client is None:
             return
         license_result = client.validate()
+        self._license_valid = license_result.valid
         if not license_result.valid:
-            self._license_valid = False
             self.license_status.setText(license_result.message)
             self._refresh_open_button()
             return
-        if not self._gemini_valid or not self._models_ready or not self._payment_confirmed:
+        if not self._all_ready():
             self._refresh_open_button()
             return
         self.accept()

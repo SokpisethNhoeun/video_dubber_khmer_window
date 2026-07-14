@@ -193,7 +193,7 @@ def repair_segments_for_tts(
 
         if translator is not None and src_code is not None:
             try:
-                khmer = _translate_with_retry(translator, source, log_cb).strip()
+                khmer = _translate_with_retry(translator, source, log_cb, cancel_event).strip()
             except Exception as exc:
                 if log_cb:
                     log_cb(f"  Warning: could not recover Khmer for segment {segment.index}: {exc}")

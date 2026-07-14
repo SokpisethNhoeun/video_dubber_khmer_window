@@ -48,17 +48,6 @@ def repository_snapshot_exists(repo_id: str, cache_dir: Path) -> bool:
     return snapshot.is_dir() and any(path.is_file() for path in snapshot.rglob("*"))
 
 
-def repository_snapshot_exists(repo_id: str, cache_dir: Path) -> bool:
-    repo_dir = cache_dir / f"models--{repo_id.replace('/', '--')}"
-    ref = repo_dir / "refs" / "main"
-    try:
-        commit = ref.read_text(encoding="utf-8").strip()
-    except OSError:
-        return False
-    snapshot = repo_dir / "snapshots" / commit
-    return snapshot.is_dir() and any(path.is_file() for path in snapshot.rglob("*"))
-
-
 def is_whisper_model_downloaded(model_name: str) -> bool:
     from huggingface_hub import try_to_load_from_cache
 

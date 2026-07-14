@@ -19,6 +19,15 @@ _ASS_ALIGNMENT = {
     "bottom_right": 3,
 }
 
+_COLOR_MAP = {
+    "white": "&H00FFFFFF",
+    "yellow": "&H0000FFFF",
+    "green": "&H0000FF00",
+    "cyan": "&H00FFFF00",
+    "red": "&H000000FF",
+    "blue": "&H00FF0000",
+}
+
 # Overlay position expressions for image overlay (FFmpeg overlay filter).
 _IMAGE_POSITION_MAP = {
     "top_left": "10:10",
@@ -98,9 +107,11 @@ def _get_video_resolution(video_path: Path) -> tuple[int, int]:
             capture_output=True, text=True, timeout=10,
         )
         if result.returncode == 0:
-            parts = result.stdout.strip().split("x")
-            if len(parts) == 2:
-                return int(parts[0]), int(parts[1])
+            lines = result.stdout.strip().splitlines()
+            if lines:
+                parts = lines[0].split("x")
+                if len(parts) == 2:
+                    return int(parts[0]), int(parts[1])
     except Exception:
         pass
     return 1920, 1080
@@ -112,6 +123,9 @@ def burn_subtitles_and_overlay(
     segments: list[Segment] | None = None,
     subtitle_language: str = "khmer",
     subtitle_font_size: int = 24,
+    subtitle_font_name: str = "Noto Sans Khmer",
+    subtitle_color: str = "white",
+    subtitle_bg_opacity: float = 0.0,
     overlay_text: str = "",
     overlay_image_path: Path | None = None,
     overlay_position: str = "bottom_right",
@@ -134,10 +148,19 @@ def burn_subtitles_and_overlay(
         export_srt(temp_srt, segments, language=subtitle_language)
         temp_files.append(temp_srt)
         srt_path_escaped = str(temp_srt).replace("\\", "/").replace(":", "\\:")
-        font_style = f"Fontname={_KHMER_FONT_NAME},"
+        color_hex = _COLOR_MAP.get(subtitle_color.lower(), "&H00FFFFFF")
+        if subtitle_bg_opacity > 0.0:
+            bg_alpha = max(0, min(255, int((1.0 - subtitle_bg_opacity) * 255)))
+            bg_hex = f"&H{bg_alpha:02X}000000"
+            border_style = 3
+            outline_style = f"Outline=0,Shadow=0,BackColour={bg_hex}"
+        else:
+            border_style = 1
+            outline_style = "Outline=2,Shadow=1,OutlineColour=&H00000000"
+        font_style = f"Fontname={subtitle_font_name},"
         filters.append(
             f"subtitles='{srt_path_escaped}':force_style='{font_style}FontSize={subtitle_font_size},"
-            f"PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2,Shadow=1,"
+            f"PrimaryColour={color_hex},{outline_style},BorderStyle={border_style},"
             f"MarginV=20'"
         )
 

@@ -88,3 +88,20 @@ def test_overlay_legacy_position_still_controls_both_overlays(monkeypatch, tmp_p
     assert isinstance(command, list)
     filter_complex = command[command.index("-filter_complex") + 1]
     assert "overlay=W-w-10:10" in filter_complex
+
+
+def test_get_video_resolution_with_multiple_streams(monkeypatch) -> None:
+    from modules.video_overlay import _get_video_resolution
+
+    def fake_run(command, **kwargs):
+        return SimpleNamespace(
+            returncode=0,
+            stdout="1920x1080\n320x240\n",
+            stderr=""
+        )
+
+    monkeypatch.setattr("modules.video_overlay.subprocess.run", fake_run)
+
+    width, height = _get_video_resolution(Path("dummy.mp4"))
+    assert width == 1920
+    assert height == 1080

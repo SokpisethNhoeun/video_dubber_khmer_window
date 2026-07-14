@@ -126,18 +126,36 @@ def test_start_queue_applies_current_tts_provider_to_queued_drafts(tmp_path):
     logs: list[str] = []
     window = AppWindow.__new__(AppWindow)
     window.draft_queue = DraftQueue.load(queue.path)
-    window.voice_page = SimpleNamespace(
-        tts_provider=SimpleNamespace(currentData=lambda: "gemini")
+    
+    settings_mock = SimpleNamespace(
+        tts_provider="gemini",
+        voice_gender="auto",
+        voice_female=None,
+        voice_male=None,
+        voice_female_reference_path=None,
+        voice_male_reference_path=None,
+        speech_rate=1.0,
+        pitch_hz=0.0,
+        rvc_enabled=False,
+        rvc_reference_audio_path=None,
+        rvc_clone_gender="female",
+        rvc_command_template="",
+        clone_workflow="",
+        clone_backend="",
+        emotion_aware_clone=False,
+        emotion_clone_mode="auto",
+        enable_clone_verification=False,
     )
+    window._settings_from_ui = lambda: settings_mock
     window._append_log = logs.append
 
-    window._apply_current_tts_provider_to_queued_drafts()
+    window._apply_current_voice_settings_to_runnable_drafts()
     loaded = DraftQueue.load(queue.path)
 
     assert loaded.jobs[0].settings.tts_provider == "gemini"
     assert loaded.jobs[1].status == STATUS_FAILED
-    assert loaded.jobs[1].settings.tts_provider == "edge"
-    assert logs == ["Updated queued draft(s) to use gemini TTS."]
+    assert loaded.jobs[1].settings.tts_provider == "gemini"
+    assert logs == ["Updated queued draft(s) to use the current Voice & TTS settings."]
 
 
 def test_cosyvoice_per_person_accepts_empty_command_when_python_is_configured(
@@ -424,6 +442,17 @@ def test_gender_profiles_validation_requires_generated_references(monkeypatch, t
     )
 
     window = AppWindow.__new__(AppWindow)
+    window.project_root = tmp_path
+    monkeypatch.setattr(AppWindow, "voice_female", SimpleNamespace(
+        currentData=lambda: {"kind": "edge", "voice": "km-KH-SreymomNeural"},
+        currentText=lambda: "Fvoice1",
+    ))
+    monkeypatch.setattr(AppWindow, "voice_male", SimpleNamespace(
+        currentData=lambda: {"kind": "edge", "voice": "km-KH-PisethNeural"},
+        currentText=lambda: "Mvoice2",
+    ))
+    monkeypatch.setattr(app_window_module, "list_voice_profiles", lambda _root: [])
+    window.voice_profiles = []
 
     error = window._validate_settings(settings)
 

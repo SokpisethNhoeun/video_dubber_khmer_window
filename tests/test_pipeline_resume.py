@@ -153,7 +153,7 @@ def test_resume_skips_completed_stages(tmp_path: Path, monkeypatch) -> None:
     assert "translation" not in calls
     assert "transcript_review" not in calls
     # Remaining stages run.
-    assert calls == ["tts", "voice_clone", "alignment", "muxing"]
+    assert calls == ["tts", "alignment", "muxing"]
     assert DubbingSession.load(session.work_dir).status == STATUS_COMPLETED
 
 

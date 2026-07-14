@@ -104,6 +104,7 @@ def clone_batch(
     language: str = "km",
     device: str = "auto",
     log_cb=None,
+    cancel_event=None,
 ) -> list[dict]:
     """Clone multiple segments in one subprocess using XTTS-v2.
 
@@ -146,14 +147,48 @@ def clone_batch(
         )
         output_lines = []
         if process.stdout:
-            for line in iter(process.stdout.readline, ""):
-                line_str = line.strip()
-                if line_str:
-                    output_lines.append(line_str)
-                    if log_cb:
-                        log_cb(f"      [XTTS] {line_str}")
+            import select
+            import io
+            from core.context import CancellationError
+            has_fileno = False
+            if hasattr(process.stdout, "fileno"):
+                try:
+                    process.stdout.fileno()
+                    has_fileno = True
+                except (io.UnsupportedOperation, AttributeError):
+                    pass
+
+            while True:
+                if cancel_event and cancel_event.is_set():
+                    process.terminate()
+                    process.wait(timeout=5)
+                    raise CancellationError("XTTS batch cloning cancelled by user")
+                
+                if has_fileno:
+                    ready, _, _ = select.select([process.stdout], [], [], 0.1)
+                    if ready:
+                        line = process.stdout.readline()
+                        if not line:
+                            break
+                        line_str = line.strip()
+                        if line_str:
+                            output_lines.append(line_str)
+                            if log_cb:
+                                log_cb(f"      [XTTS] {line_str}")
+                    else:
+                        if process.poll() is not None:
+                            break
+                else:
+                    line = process.stdout.readline()
+                    if not line:
+                        break
+                    line_str = line.strip()
+                    if line_str:
+                        output_lines.append(line_str)
+                        if log_cb:
+                            log_cb(f"      [XTTS] {line_str}")
         
-        process.wait(timeout=timeout_seconds - (time.time() - start_time))
+        process.wait(timeout=max(1.0, timeout_seconds - (time.time() - start_time)))
         
         if process.returncode != 0:
             detail = "\n".join(output_lines)

@@ -24,9 +24,11 @@ from modules.model_downloader import HuggingFaceModelDownloadManager, ModelDownl
 
 
 MODEL_PRESETS = [
-    ("small", "Whisper Small", "Fast, lower-memory transcription"),
-    ("medium", "Whisper Medium", "Recommended quality and speed"),
-    ("large-v3", "Whisper Large v3", "Best transcription, largest download"),
+    ("tiny", "Whisper Tiny", "Ultra-fast (~75MB download, ~1GB RAM, CPU-friendly)"),
+    ("base", "Whisper Base", "Fast, lower-memory (~140MB download, ~1.5GB RAM)"),
+    ("small", "Whisper Small", "Recommended speed/memory balance (~460MB download, ~2GB RAM)"),
+    ("medium", "Whisper Medium", "Recommended quality and speed (~1.5GB download, ~5GB RAM)"),
+    ("large-v3", "Whisper Large v3", "Best transcription, largest size (~3.0GB download, ~8GB RAM, high-spec GPU)"),
 ]
 QWEN_MODEL_ID = "Qwen/Qwen3-TTS-12Hz-1.7B-Base"
 COSYVOICE_MODEL_ID = "FunAudioLLM/CosyVoice2-0.5B"
@@ -67,7 +69,7 @@ class ModelDownloadsDialog(QDialog):
             self._build_repository_row(
                 "nllb",
                 "NLLB Khmer Translation",
-                "Required for local source-to-Khmer translation",
+                "Required local translator (~1.2GB download, ~2.5GB RAM)",
                 NLLB_MODEL_ID,
                 nllb_cache_dir(),
             )
@@ -76,7 +78,7 @@ class ModelDownloadsDialog(QDialog):
             self._build_repository_row(
                 "cosyvoice",
                 "CosyVoice 2 Model",
-                "Optional voice-conversion model; its runtime is also required",
+                "Optional voice-conversion model (~1.0GB download, Nvidia GPU VRAM >= 6GB)",
                 COSYVOICE_MODEL_ID,
                 cosyvoice_cache_dir(),
             )
@@ -85,7 +87,7 @@ class ModelDownloadsDialog(QDialog):
             self._build_repository_row(
                 "qwen3",
                 "Qwen3-TTS 1.7B Model",
-                "Optional high-quality voice cloning; its runtime is also required",
+                "Optional high-quality voice cloning (~3.5GB download, Nvidia GPU VRAM >= 6GB)",
                 QWEN_MODEL_ID,
                 qwen_cache_dir(),
             )

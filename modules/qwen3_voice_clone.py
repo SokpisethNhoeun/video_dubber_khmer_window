@@ -357,6 +357,7 @@ def clone_batch(
     device: str = "auto",
     log_cb=None,
     progress_cb=None,
+    cancel_event=None,
 ) -> list[dict]:
     """Clone multiple segments in one subprocess using Qwen3-TTS 1.7B Base."""
     if not segments:
@@ -396,21 +397,62 @@ def clone_batch(
         )
         output_lines = []
         if process.stdout:
-            for line in iter(process.stdout.readline, ""):
-                line_str = line.strip()
-                if _is_qwen3_noise_line(line_str):
-                    continue
-                progress = _qwen3_progress_from_line(line_str)
-                if progress is not None:
-                    if progress_cb:
-                        progress_cb(*progress)
-                    continue
-                if line_str:
-                    output_lines.append(line_str)
-                    if log_cb:
-                        log_cb(f"      [Qwen3-TTS] {line_str}")
+            import select
+            import io
+            from core.context import CancellationError
+            has_fileno = False
+            if hasattr(process.stdout, "fileno"):
+                try:
+                    process.stdout.fileno()
+                    has_fileno = True
+                except (io.UnsupportedOperation, AttributeError):
+                    pass
 
-        process.wait(timeout=max(1, timeout_seconds - int(time.time() - start_time)))
+            while True:
+                if cancel_event and cancel_event.is_set():
+                    process.terminate()
+                    process.wait(timeout=5)
+                    raise CancellationError("Qwen3-TTS batch cloning cancelled by user")
+                
+                if has_fileno:
+                    ready, _, _ = select.select([process.stdout], [], [], 0.1)
+                    if ready:
+                        line = process.stdout.readline()
+                        if not line:
+                            break
+                        line_str = line.strip()
+                        if _is_qwen3_noise_line(line_str):
+                            continue
+                        progress = _qwen3_progress_from_line(line_str)
+                        if progress is not None:
+                            if progress_cb:
+                                progress_cb(*progress)
+                            continue
+                        if line_str:
+                            output_lines.append(line_str)
+                            if log_cb:
+                                log_cb(f"      [Qwen3-TTS] {line_str}")
+                    else:
+                        if process.poll() is not None:
+                            break
+                else:
+                    line = process.stdout.readline()
+                    if not line:
+                        break
+                    line_str = line.strip()
+                    if _is_qwen3_noise_line(line_str):
+                        continue
+                    progress = _qwen3_progress_from_line(line_str)
+                    if progress is not None:
+                        if progress_cb:
+                            progress_cb(*progress)
+                        continue
+                    if line_str:
+                        output_lines.append(line_str)
+                        if log_cb:
+                            log_cb(f"      [Qwen3-TTS] {line_str}")
+
+        process.wait(timeout=max(1.0, timeout_seconds - int(time.time() - start_time)))
 
         if process.returncode != 0:
             detail = _qwen3_refine_error_detail("\n".join(output_lines))

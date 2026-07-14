@@ -122,6 +122,10 @@ class PipelineSettings:
     burn_subtitles: bool = False
     subtitle_language: str = "khmer"
     subtitle_font_size: int = 24
+    subtitle_font_name: str = "Noto Sans Khmer"
+    subtitle_color: str = "white"
+    subtitle_bg_opacity: float = 0.0
+    emotion_strength: float = 0.8
     overlay_text: str = ""
     overlay_image_path: Path | None = None
     overlay_position: str = "bottom_right"

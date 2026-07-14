@@ -61,7 +61,7 @@ def test_service_raises_for_unsupported_url(tmp_path: Path) -> None:
     service = VideoImportService(tmp_path / "cache")
 
     with pytest.raises(UnsupportedUrlError):
-        service.import_video("https://example.com/video/123")
+        service.import_video("ftp://example.com/video/123")
 
 
 def test_service_uses_cached_video_without_redownloading(monkeypatch, tmp_path: Path) -> None:

@@ -444,6 +444,17 @@ def _extract_segments_payload(result: object) -> list | None:
     return None
 
 
+def _cancel_aware_sleep(delay: float, cancel_event: Event) -> None:
+    steps = int(delay * 10)
+    for _ in range(steps):
+        if cancel_event.is_set():
+            raise CancellationError("Processing cancelled by user")
+        time.sleep(0.1)
+    rem = delay - (steps * 0.1)
+    if rem > 0 and not cancel_event.is_set():
+        time.sleep(rem)
+
+
 def _translate_batch_with_retry(
     system_prompt: str,
     messages: list[dict],
@@ -465,7 +476,7 @@ def _translate_batch_with_retry(
             if attempt < max_attempts - 1:
                 if log_cb:
                     log_cb(f"  AI translation retry {attempt + 1}/{max_attempts}")
-                time.sleep(RETRY_DELAY * (attempt + 1))
+                _cancel_aware_sleep(RETRY_DELAY * (attempt + 1), cancel_event)
                 continue
             return {}
 
@@ -480,7 +491,7 @@ def _translate_batch_with_retry(
             if attempt < max_attempts - 1:
                 if log_cb:
                     log_cb(f"  AI translation retry {attempt + 1}/{max_attempts}")
-                time.sleep(RETRY_DELAY * (attempt + 1))
+                _cancel_aware_sleep(RETRY_DELAY * (attempt + 1), cancel_event)
                 continue
             return {}
 
@@ -524,7 +535,7 @@ def _translate_batch_with_retry(
                 retry_messages = messages + [
                     _build_khmer_retry_message(batch, non_khmer, attempt)
                 ]
-            time.sleep(RETRY_DELAY * (attempt + 1))
+            _cancel_aware_sleep(RETRY_DELAY * (attempt + 1), cancel_event)
         else:
             if log_cb:
                 log_cb(

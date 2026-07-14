@@ -78,8 +78,8 @@ class Stepper(QWidget):
         self._dots: list[_StepDot] = []
         self._connectors: list[_StepConnector] = []
         self._row = QHBoxLayout(self)
-        self._row.setContentsMargins(12, 10, 12, 10)
-        self._row.setSpacing(6)
+        self._row.setContentsMargins(24, 16, 24, 16)
+        self._row.setSpacing(12)
         self.set_titles(titles)
 
     def set_titles(self, titles: list[str]) -> None:

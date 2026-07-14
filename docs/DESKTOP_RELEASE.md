@@ -94,14 +94,12 @@ devices with smaller Whisper presets.
 ## Commercial launch
 
 1. Deploy `license_server` behind HTTPS with a production database.
-2. Connect Stripe, Paddle, or another merchant service by a verified webhook.
-3. Create the corresponding `monthly`, `six_months`, or `yearly` license only
-   after a confirmed payment.
-4. Email the generated key and receipt to the buyer.
-5. Add renewal extension, cancellation, refund/revocation, and a controlled
-   device-reset flow before accepting real payments.
+2. Configure SMTP and verify OTP and license delivery using a production inbox.
+3. Verify each payment outside the application, then confirm it from the admin
+   dashboard. Confirmation creates one license and emails its key atomically.
+4. Test renewal extension, revocation, and controlled device reset procedures.
 6. Publish terms, refund policy, privacy policy, and support contact details.
 
-The current API is a secure functional foundation, but payment checkout and
-email delivery deliberately remain server-side integrations because provider
-accounts and webhook secrets have not been selected.
+The current checkout records manual payments; it does not verify Bakong or bank
+transactions automatically. Do not rely on screenshots alone. Integrate a
+signed, idempotent provider webhook before enabling automatic confirmation.

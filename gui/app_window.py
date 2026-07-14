@@ -260,7 +260,7 @@ class AppWindow(QMainWindow):
         self._load_settings()
         self.settings_page.gemini_api_key.setText(os.getenv("GEMINI_API_KEY", ""))
         from config.user_secrets import load_user_secrets
-        self.settings_page.license_key.setText(load_user_secrets().get("LICENSE_KEY", ""))
+        self.settings_page.update_license_display()
         if not os.getenv("GEMINI_API_KEY", "").strip():
             QTimer.singleShot(250, self._show_gemini_setup_notice)
         self._refresh_voice_profiles()
@@ -430,6 +430,7 @@ class AppWindow(QMainWindow):
         # Translate page
         self.translate_page.use_json_button.clicked.connect(self._use_review_json_for_video)
         self.translate_page.use_srt_button.clicked.connect(self._use_review_srt_for_video)
+        self.translate_page.glossary_button.clicked.connect(self._manage_glossary)
 
         # Speakers page
         self.speakers_page.detect_button.clicked.connect(self._detect_and_map_speakers)
@@ -1301,6 +1302,19 @@ class AppWindow(QMainWindow):
         if path:
             self.review_json_path.setText(path)
 
+    def _manage_glossary(self) -> None:
+        from gui.dialogs.glossary_manager import GlossaryManagerDialog
+
+        path_text = self.translate_page.glossary_path.text().strip()
+        if path_text:
+            glossary_path = Path(path_text).expanduser()
+        else:
+            glossary_path = Path("glossary.txt")
+
+        dialog = GlossaryManagerDialog(glossary_path, self)
+        if dialog.exec():
+            self.translate_page.glossary_path.setText(str(glossary_path))
+
     def _edit_review_json(self) -> None:
         if not self.selected_input_videos:
             QMessageBox.warning(self, "Edit Review", "Select a video first.")
@@ -1639,6 +1653,7 @@ class AppWindow(QMainWindow):
             voice_male=voice_male,
             speech_rate=self.speech_rate.value(),
             pitch_hz=self.pitch_hz.value(),
+            emotion_strength=float(vg.emotion_strength.value() / 100.0),
             whisper_model=sp.whisper_model.currentText(),
             device=sp.device.currentData(),
             voice_female_reference_path=voice_female_ref,
@@ -1682,6 +1697,9 @@ class AppWindow(QMainWindow):
             burn_subtitles=ep.burn_subtitles_check.isChecked(),
             subtitle_language=ep.subtitle_language.currentData(),
             subtitle_font_size=ep.subtitle_font_size.value(),
+            subtitle_font_name=ep.subtitle_font_name.currentText(),
+            subtitle_color=ep.subtitle_color.currentText(),
+            subtitle_bg_opacity=float(ep.subtitle_bg_opacity.value()),
             overlay_text=ep.overlay_text.text().strip(),
             overlay_image_path=Path(ep.overlay_image_path.text()) if ep.overlay_image_path.text().strip() else None,
             overlay_position=ep.overlay_text_position_picker.selected,
@@ -2217,6 +2235,8 @@ class AppWindow(QMainWindow):
         if valid:
             save_user_secret("GEMINI_API_KEY", key)
             os.environ["GEMINI_API_KEY"] = key
+            self.settings_page.gemini_api_key.setReadOnly(True)
+            self.settings_page.change_gemini_key_button.setText("Change Key")
             self.voice_page._update_provider_status()
             QMessageBox.information(self, "Gemini API", message)
         else:
@@ -2239,10 +2259,13 @@ class AppWindow(QMainWindow):
             QMessageBox.warning(self, "License", message)
             return
         result = client.activate(self.settings_page.license_key.text())
-        self.settings_page.license_status.setText(result.message)
         if result.valid:
+            self.settings_page.license_key.setReadOnly(True)
+            self.settings_page.change_license_key_button.setText("Change Key")
+            self.settings_page.update_license_display()
             QMessageBox.information(self, "License", f"{result.message}\nExpires: {result.expires_at}")
         else:
+            self.settings_page.license_status.setText(result.message)
             QMessageBox.warning(self, "License", result.message)
 
     def _open_purchase_wizard(self) -> None:
@@ -2251,8 +2274,9 @@ class AppWindow(QMainWindow):
 
         dialog = AccessOnboardingDialog(parent=self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
-            self.settings_page.license_key.setText(load_user_secrets().get("LICENSE_KEY", ""))
-            self.settings_page.license_status.setText("License activated on this device.")
+            self.settings_page.update_license_display()
+            self.settings_page.license_key.setReadOnly(True)
+            self.settings_page.change_license_key_button.setText("Change Key")
             self.settings_page.gemini_api_key.setText(os.getenv("GEMINI_API_KEY", ""))
             self.settings_page.gemini_key_status.setText("Gemini key saved and verified.")
 

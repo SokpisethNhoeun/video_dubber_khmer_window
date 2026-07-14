@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 
+from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -9,6 +10,7 @@ from PyQt6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QPushButton,
+    QSlider,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -111,17 +113,47 @@ class VoicePage(QWidget):
         self._male_label = QLabel("Male Voice")
         form.addRow(self._male_label, male_row)
 
+        rate_layout = QHBoxLayout()
+        self.speech_rate_slider = QSlider(Qt.Orientation.Horizontal)
+        self.speech_rate_slider.setRange(-50, 50)
+        self.speech_rate_slider.setValue(10)
         self.speech_rate = QSpinBox()
         self.speech_rate.setRange(-50, 50)
         self.speech_rate.setValue(10)
         self.speech_rate.setSuffix("%")
-        form.addRow("Speech rate", self.speech_rate)
+        self.speech_rate_slider.valueChanged.connect(self.speech_rate.setValue)
+        self.speech_rate.valueChanged.connect(self.speech_rate_slider.setValue)
+        rate_layout.addWidget(self.speech_rate_slider, 1)
+        rate_layout.addWidget(self.speech_rate)
+        form.addRow("Speech rate", rate_layout)
 
+        pitch_layout = QHBoxLayout()
+        self.pitch_hz_slider = QSlider(Qt.Orientation.Horizontal)
+        self.pitch_hz_slider.setRange(-20, 20)
+        self.pitch_hz_slider.setValue(0)
         self.pitch_hz = QSpinBox()
         self.pitch_hz.setRange(-20, 20)
         self.pitch_hz.setValue(0)
         self.pitch_hz.setSuffix(" Hz")
-        form.addRow("Pitch", self.pitch_hz)
+        self.pitch_hz_slider.valueChanged.connect(self.pitch_hz.setValue)
+        self.pitch_hz.valueChanged.connect(self.pitch_hz_slider.setValue)
+        pitch_layout.addWidget(self.pitch_hz_slider, 1)
+        pitch_layout.addWidget(self.pitch_hz)
+        form.addRow("Pitch", pitch_layout)
+
+        emotion_layout = QHBoxLayout()
+        self.emotion_strength_slider = QSlider(Qt.Orientation.Horizontal)
+        self.emotion_strength_slider.setRange(0, 100)
+        self.emotion_strength_slider.setValue(80)
+        self.emotion_strength = QSpinBox()
+        self.emotion_strength.setRange(0, 100)
+        self.emotion_strength.setValue(80)
+        self.emotion_strength.setSuffix("%")
+        self.emotion_strength_slider.valueChanged.connect(self.emotion_strength.setValue)
+        self.emotion_strength.valueChanged.connect(self.emotion_strength_slider.setValue)
+        emotion_layout.addWidget(self.emotion_strength_slider, 1)
+        emotion_layout.addWidget(self.emotion_strength)
+        form.addRow("Emotion strength", emotion_layout)
 
         layout.addLayout(form)
         layout.addStretch(1)
@@ -204,6 +236,7 @@ class VoicePage(QWidget):
             "voice_male": self.voice_male.currentText(),
             "speech_rate": self.speech_rate.value(),
             "pitch_hz": self.pitch_hz.value(),
+            "emotion_strength": self.emotion_strength.value(),
             "simple_tts_flow": self.simple_tts_flow.isChecked(),
         }
 
@@ -224,6 +257,7 @@ class VoicePage(QWidget):
         self.voice_male.setCurrentText(config.get("voice_male", ""))
         self.speech_rate.setValue(config.get("speech_rate", 10))
         self.pitch_hz.setValue(config.get("pitch_hz", 0))
+        self.emotion_strength.setValue(config.get("emotion_strength", 80))
         self.simple_tts_flow.setChecked(config.get("simple_tts_flow", False))
         self.set_voice_mode(str(self.voice_gender.currentData() or ""))
 

@@ -27,7 +27,7 @@ EDGE_TTS_VOICES = {
     "male": "km-KH-PisethNeural",
 }
 
-WHISPER_MODELS = ["medium", "small", "base", "large-v3"]
+WHISPER_MODELS = ["tiny", "base", "small", "medium", "large-v3"]
 DEFAULT_WHISPER_MODEL = "medium"
 
 STAGES = [

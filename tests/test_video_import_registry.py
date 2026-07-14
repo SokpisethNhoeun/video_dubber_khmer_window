@@ -27,4 +27,4 @@ def test_resolve_provider_recognizes_xiaohongshu_and_rednote() -> None:
 
 
 def test_resolve_provider_returns_none_for_unsupported_url() -> None:
-    assert resolve_provider("https://example.com/video/123") is None
+    assert resolve_provider("ftp://example.com/video/123") is None
