@@ -29,7 +29,6 @@ for package in (
     "julius",
     "openunmix",
     "dora",
-    "pyannote.audio",
     "speechbrain",
     "sklearn",
     "joblib",

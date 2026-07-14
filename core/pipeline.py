@@ -20,10 +20,9 @@ from modules.audio_quality import (
 )
 from modules.audio_utils import align_audio_segments, extract_audio, mux_video, remove_tree, safe_output_path, ffprobe_duration
 from modules.video_overlay import burn_subtitles_and_overlay
-from modules.diarizer import SpeakerTurn, assign_speakers_to_segments, detect_speakers, merge_similar_speakers, turns_from_dicts
+from modules.diarizer import SpeakerTurn
 from modules.reference_quality import assess_reference
 from modules.prosody import compute_speaker_rate_profiles
-from modules.speaker_references import build_auto_speaker_references
 from modules.speaker_verification import (
     CLONE_SIMILARITY_ACCEPT,
     CLONE_SIMILARITY_STRONG,
@@ -489,86 +488,17 @@ class DubbingPipeline:
             state.speaker_mappings = (self.session.speaker_mappings or {}) if self.session else state.speaker_mappings
             self._restored("speaker_detection", "Stage 3/8")
         elif self._uses_speaker_split(state.voice_mode) or state.voice_mode == "auto":
-            gemini_tts = getattr(settings, "tts_provider", "edge") == "gemini"
-            if (
-                not settings.auto_speaker_references
-                and not gemini_tts
-                and self._is_per_person_mode(state.voice_mode)
-            ):
-                self.context.emit_log("Preparing and validating per-speaker reference audio")
-                state.speaker_mappings = self._prepare_speaker_mappings(state.speaker_mappings)
-            if state.voice_mode == "auto":
-                self.context.emit_log("Stage 3/8: detecting speakers for male/female voice grouping")
-            else:
-                self.context.emit_log("Stage 3/8: assigning segments to detected speakers")
-            try:
-                raw_turns = settings.diarization_turns.get(video_key)
-                if raw_turns:
-                    state.turns = turns_from_dicts(raw_turns)
-                    self.context.emit_log(f"Using pre-detected speaker turns for {settings.input_video.name}")
-                    self.context.emit_progress("speaker_detection", 100)
-                else:
-                    cached_turns = self._load_cached_diarization()
-                    if cached_turns:
-                        state.turns = turns_from_dicts(cached_turns)
-                        self.context.emit_log(f"Using cached speaker turns for {settings.input_video.name}")
-                        self.context.emit_progress("speaker_detection", 100)
-                    else:
-                        state.turns = detect_speakers(
-                            state.audio_wav,
-                            settings.device,
-                            self._progress("speaker_detection"),
-                            self.context.emit_log,
-                            self.context.cancel_event,
-                        )
-                        self._store_cached_diarization(state.turns)
-                try:
-                    state.turns = merge_similar_speakers(state.turns, state.audio_wav, log_cb=self.context.emit_log)
-                except Exception as exc:
-                    self.context.emit_log(f"  Speaker merge check skipped: {exc}")
-                if settings.auto_speaker_references and not gemini_tts and self._is_per_person_mode(state.voice_mode):
-                    self.context.emit_log("Building automatic per-speaker reference audio from source video")
-                    auto_mappings = build_auto_speaker_references(
-                        state.audio_wav,
-                        settings.input_video,
-                        state.turns,
-                        self.context.work_dir,
-                        settings.min_reference_seconds,
-                        self.context.cancel_event,
-                        self._persistent_cache_dir(),
-                        self.context.emit_log,
-                    )
-                    state.speaker_mappings = self._prepare_speaker_mappings(auto_mappings)
-                state.segments = assign_speakers_to_segments(
-                    state.segments,
-                    state.turns,
-                    state.speaker_mappings,
-                    self.context.emit_log,
-                    state.audio_wav,
-                )
-                state.segments = self._apply_speaker_merges(state.segments, state.speaker_mappings)
-            except Exception as exc:
-                if state.voice_mode == "auto":
-                    self.context.emit_log(
-                        f"Speaker diarization unavailable or failed: {exc}. "
-                        "Continuing with per-segment male/female gender detection."
-                    )
-                elif getattr(settings, "tts_provider", "edge") == "gemini":
-                    self.context.emit_log(
-                        f"Speaker diarization unavailable or failed: {exc}. "
-                        "Continuing with Gemini TTS; all lines will share one preset voice."
-                    )
-                else:
-                    self.context.emit_log(
-                        f"Speaker diarization unavailable or failed: {exc}. "
-                        "Continuing with auto male/female voice mode."
-                    )
-                    state.voice_mode = "auto"
-                state.per_person_mode = False
-                self.context.quality_report.speaker_count = 0
-                self.context.quality_report.missing_references.clear()
-                self.context.quality_report.bad_references.clear()
-                self.context.emit_progress("speaker_detection", 100)
+            if self._is_per_person_mode(state.voice_mode):
+                state.voice_mode = "auto"
+            state.per_person_mode = False
+            state.speaker_mappings = {}
+            self.context.emit_log(
+                "Stage 3/8: using per-segment male/female voice detection"
+            )
+            self.context.quality_report.speaker_count = 0
+            self.context.quality_report.missing_references.clear()
+            self.context.quality_report.bad_references.clear()
+            self.context.emit_progress("speaker_detection", 100)
             self.context.check_cancelled()
             self._release_memory()
         else:

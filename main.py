@@ -53,7 +53,6 @@ def main() -> int:
             import ctranslate2  # noqa: F401
             import demucs.separate  # noqa: F401
             import faster_whisper  # noqa: F401
-            import pyannote.audio  # noqa: F401
             import sklearn  # noqa: F401
             import speechbrain  # noqa: F401
             import torch  # noqa: F401

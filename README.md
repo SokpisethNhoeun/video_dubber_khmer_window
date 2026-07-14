@@ -34,12 +34,8 @@ pip install -r requirements.txt
 
 For CUDA-enabled PyTorch, install the wheel that matches your local CUDA driver from the official PyTorch instructions, then install the remaining requirements.
 
-Per-person voices are optional and use pyannote speaker diarization. To enable that mode:
-
-```bash
-pip install -r requirements-optional.txt
-export HF_TOKEN=your_hugging_face_token
-```
+Speaker voice grouping uses the built-in per-segment male/female detector and does not require a
+Hugging Face token.
 
 TorchCodec is not required by this app. If it is installed separately and setup
 checks report a TorchCodec error, remove it or install a version compatible with
@@ -102,7 +98,7 @@ The administrator must verify the certificate thumbprint through a trusted chann
 it to the laptop's trusted publishers and App Control allow policy.
 
 Click `Check Setup` in the app before a long job to verify FFmpeg, PyTorch/CUDA,
-torchaudio, pyannote, Hugging Face token visibility, Demucs, Edge TTS, and the
+torchaudio, Demucs, Edge TTS, and the
 selected voice clone command. The results are printed in the execution log.
 
 The input picker supports selecting multiple videos at once. Batch jobs are processed one video at a time and each generated video is written to the selected output folder.
@@ -265,25 +261,17 @@ Use the Clone segments selector to choose whether the reference voice clone runs
 
 Reference audio is validated before cloning. The app warns about missing files, unsupported formats, short clips, silence, clipping, DC offset, and likely noisy or over-compressed audio. A clean reference should be at least 10 seconds of speech.
 
-## Per-Person Voices
+## Speaker Voice Grouping
 
-Select `Auto per-person clone` for the one-click local clone workflow. The app runs speaker diarization during `Start`, extracts one clean reference WAV per detected speaker from the source video, validates and cleans those references, translates to Khmer, generates base Edge Khmer TTS, then converts each translated segment to that segment speaker's extracted voice.
-
-Auto references are written under each job folder as `auto_speaker_references/` when `Keep intermediate files` is enabled. With persistent cache enabled, they are also cached under `cache/auto_speaker_references/` and reused for the same source video.
-
-For manual control, select `Per-person voices (manual mapping)`, then click `Detect Speakers / Map Voices`. The app runs speaker diarization once per selected video, shows the detected speakers, and lets you rename each person and assign one MP3/WAV reference file or saved voice profile. Batch videos are mapped separately because speaker identities are video-specific.
-
-If you imported several Khmer voices, use `Fill Missing From Library` to assign saved voices only to empty speaker rows, or `Round-Robin Library` to reuse the saved voices across every detected speaker. For example, 3 saved voices can be reused across 10 people.
-
-If pyannote or `HF_TOKEN` is unavailable, the app offers to continue with Auto male/female mode. If a detected speaker has no reference file, that speaker's segments use the normal TTS voice and the pipeline logs a warning.
-
-The mapping dialog shows validation status for each reference, can clean/prepare each file, warns when the same reference is assigned to multiple speakers, and can generate a short Khmer preview through the configured reference clone command.
+The standard workflow classifies each transcription segment as male or female and selects the
+configured Khmer voice. It does not identify persistent people across the whole video and does not
+require a Hugging Face token. Saved female and male voice profiles can still be selected manually.
 
 ## Pipeline
 
 1. Extract audio to mono 16 kHz WAV
 2. Transcribe with faster-whisper using VAD and timestamps
-3. Optionally assign transcription segments to diarized speakers for per-person voices
+3. Detect a male/female voice category for each transcription segment
 4. Batch translate to Khmer with NLLB-200
 5. Review Khmer transcript with story context, optional glossary, saved edits, or optional AI
 6. Batch synthesize reviewed Khmer TTS with edge-tts

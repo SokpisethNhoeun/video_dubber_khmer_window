@@ -159,32 +159,6 @@ def _is_per_person_mode(settings: PipelineSettings) -> bool:
     return settings.voice_gender in {"per_person", "per_person_auto"}
 
 
-def _check_diarization(settings: PipelineSettings) -> list[SetupCheckResult]:
-    results: list[SetupCheckResult] = []
-    if not _is_per_person_mode(settings):
-        return results
-
-    try:
-        from pyannote.audio import Pipeline  # noqa: F401
-
-        results.append(_result("pyannote.audio", "OK", _package_version("pyannote.audio") or "installed"))
-    except Exception as exc:
-        results.append(_result("pyannote.audio", "ERROR", f"Could not import pyannote.audio: {exc}"))
-
-    token_visible = bool(os.environ.get("HF_TOKEN") or os.environ.get("HUGGINGFACE_TOKEN"))
-    if token_visible:
-        results.append(_result("HF token", "OK", "HF_TOKEN or HUGGINGFACE_TOKEN is visible to the app."))
-    else:
-        results.append(
-            _result(
-                "HF token",
-                "ERROR",
-                "Per-person speaker detection needs HF_TOKEN or HUGGINGFACE_TOKEN in the app environment.",
-            )
-        )
-    return results
-
-
 def _command_setup_error(command_template: str, project_root: Path) -> str | None:
     try:
         parts = shlex.split(command_template)
@@ -573,7 +547,6 @@ def run_setup_checks(settings: PipelineSettings, project_root: Path) -> list[Set
     results.extend(_check_ffmpeg())
     results.extend(_check_python_packages(settings))
     results.append(_check_torchcodec())
-    results.extend(_check_diarization(settings))
     results.extend(_check_clone_command(settings, project_root))
     results.extend(_check_transcript_review(settings))
 

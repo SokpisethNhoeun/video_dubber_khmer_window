@@ -5,8 +5,9 @@ import shutil
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
 from core.context import CancellationError
+from config.runtime import windows_creation_flags
 from modules.audio_utils import FFmpegError, ensure_ffmpeg, ffprobe_duration
 
 
@@ -258,44 +259,30 @@ def master_final_audio(
 
 
 def _run_interruptible(command: list[str], cancel_event: Event | None) -> str:
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
-    try:
-        import select
-        import io
-        stderr = []
-        has_fileno = False
-        if process.stderr and hasattr(process.stderr, "fileno"):
-            try:
-                process.stderr.fileno()
-                has_fileno = True
-            except (io.UnsupportedOperation, AttributeError):
-                pass
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=windows_creation_flags(),
+    )
+    stderr: list[str] = []
 
-        while True:
+    def read_stderr() -> None:
+        if process.stderr:
+            for line in process.stderr:
+                stderr.append(line)
+
+    reader = Thread(target=read_stderr, name="ffmpeg-stderr", daemon=True)
+    reader.start()
+    try:
+        while process.poll() is None:
             if cancel_event and cancel_event.is_set():
                 raise CancellationError("Processing cancelled by user")
-            
-            if has_fileno and process.stderr:
-                ready, _, _ = select.select([process.stderr], [], [], 0.1)
-                if ready:
-                    line = process.stderr.readline()
-                    if not line:
-                        break
-                    if line:
-                        stderr.append(line)
-                else:
-                    if process.poll() is not None:
-                        break
-            else:
-                if process.stderr:
-                    line = process.stderr.readline()
-                    if not line:
-                        break
-                    if line:
-                        stderr.append(line)
-                else:
-                    if process.poll() is not None:
-                        break
+            import time
+            time.sleep(0.1)
     except Exception:
         process.terminate()
         try:
@@ -304,12 +291,8 @@ def _run_interruptible(command: list[str], cancel_event: Event | None) -> str:
             process.kill()
             process.wait()
         raise
-
-    if process.stderr:
-        remaining = process.stderr.read()
-        if remaining:
-            stderr.append(remaining)
-    process.wait()
+    finally:
+        reader.join(timeout=5)
     if process.returncode != 0:
         raise FFmpegError("".join(stderr).strip() or f"Command failed: {' '.join(command)}")
     return "".join(stderr)

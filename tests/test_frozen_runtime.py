@@ -41,8 +41,8 @@ def test_windows_build_declares_and_collects_demucs() -> None:
     assert "demucs>=4,<5" in requirements
     assert '"demucs"' in spec
     assert "import demucs.separate" in main
-    assert "import pyannote.audio" in main
-    assert '"pyannote.audio"' in spec
+    assert "import pyannote.audio" not in main
+    assert '"pyannote.audio"' not in spec
     assert "import av" in main
     assert "import ctranslate2" in main
     assert "import faster_whisper" in main

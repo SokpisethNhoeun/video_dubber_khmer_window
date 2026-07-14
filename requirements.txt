@@ -8,8 +8,6 @@ torch>=2.6,<2.7
 torchaudio>=2.6,<2.7
 # Required by the packaged background-music preservation feature.
 demucs>=4,<5
-# Required by speaker detection and automatic per-person voices exposed in the UI.
-pyannote.audio==3.4.0
 speechbrain==1.1.0
 scikit-learn>=1.4,<2
 joblib>=1.3
