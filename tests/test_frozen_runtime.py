@@ -56,7 +56,9 @@ def test_windows_release_signs_and_verifies_every_native_file() -> None:
     assert '$_.Extension -in ".exe", ".dll", ".pyd"' in workflow
     assert "Get-AuthenticodeSignature" in workflow
     assert "EphemeralKeySet" in workflow
-    assert "WaitForExit(30000)" in workflow
+    assert "X509Store" in workflow
+    assert "FindByThumbprint" in workflow
+    assert "certutil.exe" not in workflow
     assert "WINDOWS_SIGNING_CERT_BASE64" not in workflow
     assert "KhmerVideoDubber-Publisher.cer" in workflow
 

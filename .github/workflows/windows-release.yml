@@ -101,16 +101,28 @@ jobs:
             & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD $File.FullName
             if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($File.FullName)" }
           }
-          foreach ($Store in @("Root", "TrustedPublisher")) {
-            $Process = Start-Process certutil.exe `
-              -ArgumentList @("-user", "-addstore", "-f", $Store, $Cer) `
-              -NoNewWindow -PassThru
-            if (-not $Process.WaitForExit(30000)) {
-              $Process.Kill()
-              throw "Timed out after 30 seconds while trusting the signing certificate in $Store."
+          $PublicCert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($Cer)
+          foreach ($StoreName in @("Root", "TrustedPublisher")) {
+            $Store = [Security.Cryptography.X509Certificates.X509Store]::new(
+              $StoreName,
+              [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+            )
+            try {
+              $Store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+              $Store.Add($PublicCert)
+              $Imported = $Store.Certificates.Find(
+                [Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
+                $PublicCert.Thumbprint,
+                $false
+              )
+              if ($Imported.Count -eq 0) {
+                throw "Signing certificate was not found after importing it into $StoreName."
+              }
+              Write-Host "Trusted signing certificate in CurrentUser\\$StoreName."
             }
-            if ($Process.ExitCode -ne 0) {
-              throw "Could not trust the signing certificate in $Store (certutil exit code $($Process.ExitCode))."
+            finally {
+              $Store.Close()
+              $Store.Dispose()
             }
           }
           foreach ($File in $NativeFiles) {
