@@ -26,6 +26,17 @@ from modules.model_downloader import (
 )
 
 
+def _friendly_processing_error(exc: Exception) -> str:
+    message = str(exc)
+    if "application control policy has blocked this file" in message.lower():
+        return (
+            "Windows Application Control blocked a native app component. Install the latest "
+            "officially signed Khmer Video Dubber setup package. If it is already current, "
+            "ask your Windows administrator to allow the Khmer Video Dubber publisher."
+        )
+    return message
+
+
 class GeminiValidationWorker(QObject):
     finished = pyqtSignal(bool, str)
 
@@ -316,7 +327,7 @@ class PipelineWorker(QObject):
                 self.signals.failed.emit("Processing paused — cancelled by user")
                 return
             except Exception as exc:
-                message = str(exc)
+                message = _friendly_processing_error(exc)
                 failures.append((video_path, message))
                 self.signals.log.emit(f"Failed processing {video_path.name}: {message}")
                 if idx < total:

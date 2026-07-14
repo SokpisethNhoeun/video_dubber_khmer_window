@@ -79,3 +79,4 @@ third_party/
 .DS_Store
 Thumbs.db
 Desktop.ini
+packaging/windows/signing-output/

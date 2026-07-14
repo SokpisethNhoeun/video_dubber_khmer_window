@@ -49,10 +49,15 @@ def main() -> int:
             print("SMOKE_TEST_FAILED: bundled FFmpeg tools are unavailable")
             return 2
         try:
+            import av  # noqa: F401
+            import ctranslate2  # noqa: F401
             import demucs.separate  # noqa: F401
+            import faster_whisper  # noqa: F401
             import pyannote.audio  # noqa: F401
             import sklearn  # noqa: F401
             import speechbrain  # noqa: F401
+            import torch  # noqa: F401
+            import torchaudio  # noqa: F401
         except Exception as exc:
             print(f"SMOKE_TEST_FAILED: bundled audio/model runtime is unavailable: {exc}")
             return 4

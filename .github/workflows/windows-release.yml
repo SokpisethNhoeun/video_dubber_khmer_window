@@ -17,6 +17,7 @@ jobs:
     env:
       SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
       SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
+      SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -31,6 +32,29 @@ jobs:
           python -m pip install --upgrade pip setuptools wheel
           pip install -r requirements.txt
           pip install pyinstaller
+
+      - name: Require production code-signing certificate
+        shell: pwsh
+        run: |
+          if (-not $env:SIGNING_PFX -or -not $env:SIGNING_PASSWORD -or -not $env:SIGNING_CERT) {
+            throw "Releases require WINDOWS_SIGNING_PFX_BASE64, WINDOWS_SIGNING_PASSWORD, and WINDOWS_SIGNING_CERT_BASE64 secrets."
+          }
+
+      - name: Validate and temporarily trust signing certificate
+        shell: pwsh
+        run: |
+          $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          $Cer = Join-Path $env:RUNNER_TEMP "publisher.cer"
+          [IO.File]::WriteAllBytes($Pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
+          [IO.File]::WriteAllBytes($Cer, [Convert]::FromBase64String($env:SIGNING_CERT))
+          $PfxCert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($Pfx, $env:SIGNING_PASSWORD)
+          $PublicCert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($Cer)
+          if ($PfxCert.Thumbprint -ne $PublicCert.Thumbprint) {
+            throw "WINDOWS_SIGNING_CERT_BASE64 does not match WINDOWS_SIGNING_PFX_BASE64."
+          }
+          Import-Certificate -FilePath $Cer -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+          Import-Certificate -FilePath $Cer -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
+          "SIGNING_THUMBPRINT=$($PublicCert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Install trusted FFmpeg and Inno Setup
         shell: pwsh
@@ -56,39 +80,63 @@ jobs:
             -Version '${{ inputs.version }}' `
             -SkipInstaller
 
-      - name: Frozen clean-machine smoke test
-        shell: pwsh
-        run: |
-          dist/KhmerVideoDubber/KhmerVideoDubber.exe --smoke-test
-
-      - name: Optionally sign frozen executable
-        if: ${{ env.SIGNING_PFX != '' }}
+      - name: Sign and verify all frozen native files
         shell: pwsh
         run: |
           $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-          [IO.File]::WriteAllBytes($Pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
           $Signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD "dist\KhmerVideoDubber\KhmerVideoDubber.exe"
-          Remove-Item $Pfx -Force
+          if (-not $Signtool) { throw "signtool.exe was not found." }
+          $NativeFiles = Get-ChildItem "dist\KhmerVideoDubber" -Recurse -File | Where-Object { $_.Extension -in ".exe", ".dll", ".pyd" }
+          if (-not $NativeFiles) { throw "No native files were found in the frozen application." }
+          foreach ($File in $NativeFiles) {
+            & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD $File.FullName
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($File.FullName)" }
+          }
+          foreach ($File in $NativeFiles) {
+            $Signature = Get-AuthenticodeSignature $File.FullName
+            if ($Signature.Status -ne "Valid") {
+              throw "Invalid Authenticode signature for $($File.FullName): $($Signature.Status)"
+            }
+          }
+
+      - name: Frozen clean-machine native smoke test
+        shell: pwsh
+        run: |
+          dist/KhmerVideoDubber/KhmerVideoDubber.exe --smoke-test
 
       - name: Build installer
         shell: pwsh
         run: |
           ISCC.exe "/DMyAppVersion=${{ inputs.version }}" packaging/windows/KhmerVideoDubber.iss
 
-      - name: Optionally sign installer
-        if: ${{ env.SIGNING_PFX != '' }}
+      - name: Sign and verify installer
         shell: pwsh
         run: |
           $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
-          [IO.File]::WriteAllBytes($Pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
           $Signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1).FullName
           & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD "packaging\windows\release\KhmerVideoDubber-Setup-${{ inputs.version }}.exe"
-          Remove-Item $Pfx -Force
+          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed." }
+          $Installer = "packaging\windows\release\KhmerVideoDubber-Setup-${{ inputs.version }}.exe"
+          $Signature = Get-AuthenticodeSignature $Installer
+          if ($Signature.Status -ne "Valid") { throw "Installer signature verification failed: $($Signature.Status)" }
+          Copy-Item (Join-Path $env:RUNNER_TEMP "publisher.cer") "packaging\windows\release\KhmerVideoDubber-Publisher.cer" -Force
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
         with:
           name: KhmerVideoDubber-Setup-${{ inputs.version }}
-          path: packaging/windows/release/KhmerVideoDubber-Setup-${{ inputs.version }}.exe
+          path: |
+            packaging/windows/release/KhmerVideoDubber-Setup-${{ inputs.version }}.exe
+            packaging/windows/release/KhmerVideoDubber-Publisher.cer
           if-no-files-found: error
+
+      - name: Remove temporary signing trust
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          if ($env:SIGNING_THUMBPRINT) {
+            Remove-Item "Cert:\CurrentUser\Root\$env:SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\CurrentUser\TrustedPublisher\$env:SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
+          }
+          Remove-Item (Join-Path $env:RUNNER_TEMP "codesign.pfx") -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $env:RUNNER_TEMP "publisher.cer") -Force -ErrorAction SilentlyContinue

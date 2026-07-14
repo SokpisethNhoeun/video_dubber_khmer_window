@@ -79,6 +79,28 @@ Keep intermediate files for inspection:
 python main.py --keep-temp
 ```
 
+## Free Windows Self-Signed Releases
+
+A self-signed certificate is free, but each target laptop's administrator must explicitly trust
+its public certificate and allow that publisher in Windows Application Control. Generate the
+private PFX and public CER on a trusted Windows computer:
+
+```powershell
+$Password = Read-Host "PFX password" -AsSecureString
+./packaging/windows/create-self-signed-certificate.ps1 -Password $Password
+```
+
+Create these GitHub Actions secrets from the generated files:
+
+- `WINDOWS_SIGNING_PFX_BASE64`: contents of `WINDOWS_SIGNING_PFX_BASE64.txt`
+- `WINDOWS_SIGNING_CERT_BASE64`: contents of `WINDOWS_SIGNING_CERT_BASE64.txt`
+- `WINDOWS_SIGNING_PASSWORD`: the PFX password
+
+The release artifact contains the installer and `KhmerVideoDubber-Publisher.cer`. Give only the
+CER file to the target administrator. Never share or commit the PFX, its Base64 text, or password.
+The administrator must verify the certificate thumbprint through a trusted channel before adding
+it to the laptop's trusted publishers and App Control allow policy.
+
 Click `Check Setup` in the app before a long job to verify FFmpeg, PyTorch/CUDA,
 torchaudio, pyannote, Hugging Face token visibility, Demucs, Edge TTS, and the
 selected voice clone command. The results are printed in the execution log.
