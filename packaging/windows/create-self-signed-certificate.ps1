@@ -21,15 +21,12 @@ $Certificate = New-SelfSignedCertificate `
 $PfxPath = Join-Path $OutputDirectory "KhmerVideoDubber-Signing.pfx"
 $CerPath = Join-Path $OutputDirectory "KhmerVideoDubber-Publisher.cer"
 $PfxBase64Path = Join-Path $OutputDirectory "WINDOWS_SIGNING_PFX_BASE64.txt"
-$CerBase64Path = Join-Path $OutputDirectory "WINDOWS_SIGNING_CERT_BASE64.txt"
 
 Export-PfxCertificate -Cert $Certificate -FilePath $PfxPath -Password $Password | Out-Null
 Export-Certificate -Cert $Certificate -FilePath $CerPath -Type CERT | Out-Null
 [IO.File]::WriteAllText($PfxBase64Path, [Convert]::ToBase64String([IO.File]::ReadAllBytes($PfxPath)))
-[IO.File]::WriteAllText($CerBase64Path, [Convert]::ToBase64String([IO.File]::ReadAllBytes($CerPath)))
 
 Write-Host "Created free self-signed code-signing files in $OutputDirectory"
 Write-Host "Set WINDOWS_SIGNING_PFX_BASE64 from $PfxBase64Path"
-Write-Host "Set WINDOWS_SIGNING_CERT_BASE64 from $CerBase64Path"
 Write-Host "Set WINDOWS_SIGNING_PASSWORD to the password supplied to this script."
 Write-Host "Keep the PFX and its Base64 file private. Give only the CER file to administrators."

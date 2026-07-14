@@ -17,7 +17,6 @@ jobs:
     env:
       SIGNING_PFX: ${{ secrets.WINDOWS_SIGNING_PFX_BASE64 }}
       SIGNING_PASSWORD: ${{ secrets.WINDOWS_SIGNING_PASSWORD }}
-      SIGNING_CERT: ${{ secrets.WINDOWS_SIGNING_CERT_BASE64 }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,25 +35,34 @@ jobs:
       - name: Require production code-signing certificate
         shell: pwsh
         run: |
-          if (-not $env:SIGNING_PFX -or -not $env:SIGNING_PASSWORD -or -not $env:SIGNING_CERT) {
-            throw "Releases require WINDOWS_SIGNING_PFX_BASE64, WINDOWS_SIGNING_PASSWORD, and WINDOWS_SIGNING_CERT_BASE64 secrets."
+          if (-not $env:SIGNING_PFX -or -not $env:SIGNING_PASSWORD) {
+            throw "Releases require WINDOWS_SIGNING_PFX_BASE64 and WINDOWS_SIGNING_PASSWORD secrets."
           }
 
-      - name: Validate and temporarily trust signing certificate
+      - name: Validate signing certificate
+        timeout-minutes: 2
         shell: pwsh
         run: |
+          $StartedAt = Get-Date
           $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           $Cer = Join-Path $env:RUNNER_TEMP "publisher.cer"
           [IO.File]::WriteAllBytes($Pfx, [Convert]::FromBase64String($env:SIGNING_PFX))
-          [IO.File]::WriteAllBytes($Cer, [Convert]::FromBase64String($env:SIGNING_CERT))
-          $PfxCert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($Pfx, $env:SIGNING_PASSWORD)
-          $PublicCert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($Cer)
-          if ($PfxCert.Thumbprint -ne $PublicCert.Thumbprint) {
-            throw "WINDOWS_SIGNING_CERT_BASE64 does not match WINDOWS_SIGNING_PFX_BASE64."
+          $Flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::EphemeralKeySet
+          $PfxCert = [Security.Cryptography.X509Certificates.X509Certificate2]::new(
+            $Pfx,
+            $env:SIGNING_PASSWORD,
+            $Flags
+          )
+          if (-not $PfxCert.HasPrivateKey) {
+            throw "WINDOWS_SIGNING_PFX_BASE64 does not contain a private key."
           }
-          Import-Certificate -FilePath $Cer -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
-          Import-Certificate -FilePath $Cer -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
-          "SIGNING_THUMBPRINT=$($PublicCert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          [IO.File]::WriteAllBytes(
+            $Cer,
+            $PfxCert.Export([Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+          )
+          "SIGNING_THUMBPRINT=$($PfxCert.Thumbprint)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $Elapsed = [math]::Round(((Get-Date) - $StartedAt).TotalSeconds, 2)
+          Write-Host "Certificate validated and public certificate exported in $Elapsed seconds."
 
       - name: Install trusted FFmpeg and Inno Setup
         shell: pwsh
@@ -84,6 +92,7 @@ jobs:
         shell: pwsh
         run: |
           $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          $Cer = Join-Path $env:RUNNER_TEMP "publisher.cer"
           $Signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1).FullName
           if (-not $Signtool) { throw "signtool.exe was not found." }
           $NativeFiles = Get-ChildItem "dist\KhmerVideoDubber" -Recurse -File | Where-Object { $_.Extension -in ".exe", ".dll", ".pyd" }
@@ -91,6 +100,18 @@ jobs:
           foreach ($File in $NativeFiles) {
             & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD $File.FullName
             if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($File.FullName)" }
+          }
+          foreach ($Store in @("Root", "TrustedPublisher")) {
+            $Process = Start-Process certutil.exe `
+              -ArgumentList @("-user", "-addstore", "-f", $Store, $Cer) `
+              -NoNewWindow -PassThru
+            if (-not $Process.WaitForExit(30000)) {
+              $Process.Kill()
+              throw "Timed out after 30 seconds while trusting the signing certificate in $Store."
+            }
+            if ($Process.ExitCode -ne 0) {
+              throw "Could not trust the signing certificate in $Store (certutil exit code $($Process.ExitCode))."
+            }
           }
           foreach ($File in $NativeFiles) {
             $Signature = Get-AuthenticodeSignature $File.FullName

@@ -89,8 +89,10 @@ $Password = Read-Host "PFX password" -AsSecureString
 Create these GitHub Actions secrets from the generated files:
 
 - `WINDOWS_SIGNING_PFX_BASE64`: contents of `WINDOWS_SIGNING_PFX_BASE64.txt`
-- `WINDOWS_SIGNING_CERT_BASE64`: contents of `WINDOWS_SIGNING_CERT_BASE64.txt`
 - `WINDOWS_SIGNING_PASSWORD`: the PFX password
+
+The workflow derives the matching public CER directly from the PFX, so no separate certificate
+secret is required.
 
 The release artifact contains the installer and `KhmerVideoDubber-Publisher.cer`. Give only the
 CER file to the target administrator. Never share or commit the PFX, its Base64 text, or password.
