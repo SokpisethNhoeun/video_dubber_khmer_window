@@ -195,13 +195,19 @@ class LicenseClient:
         return OtpResult(True, str(data.get("message", "Email verified.")), token)
 
     def create_checkout(
-        self, email: str, plan: str, email_verification_token: str = ""
+        self,
+        email: str,
+        plan: str,
+        email_verification_token: str = "",
+        promo_code: str = "",
     ) -> CheckoutResult:
+        normalized_promo_code = promo_code.strip().upper()
         try:
             data = self._post("/v1/payments/checkout", {
                 "email": email.strip(),
                 "plan": plan,
                 "email_verification_token": email_verification_token,
+                "promo_code": normalized_promo_code or None,
             })
         except RuntimeError as exc:
             return CheckoutResult(False, str(exc))

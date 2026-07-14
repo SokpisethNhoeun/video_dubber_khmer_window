@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QMouseEvent
+from PyQt6.QtGui import QKeyEvent, QMouseEvent
 from PyQt6.QtWidgets import QLabel, QVBoxLayout, QWidget
 
 
@@ -26,6 +26,7 @@ class PlanCard(QWidget):
         self.setProperty("hoverable", "true")
         self.setProperty("selected", "false")
         self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 14, 16, 14)
@@ -52,8 +53,17 @@ class PlanCard(QWidget):
 
         layout.addStretch(1)
 
+        self.selection_label = QLabel("○  Select this plan")
+        self.selection_label.setObjectName("CardSelection")
+        self.selection_label.setStyleSheet("font-weight: 700;")
+        layout.addWidget(self.selection_label)
+
+        self.setAccessibleName(f"{name} subscription plan")
+        self.setAccessibleDescription(f"{price}. Select this plan to continue to payment.")
+
     def set_selected(self, selected: bool) -> None:
         self.setProperty("selected", "true" if selected else "false")
+        self.selection_label.setText("✓  Selected" if selected else "○  Select this plan")
         self.style().unpolish(self)
         self.style().polish(self)
 
@@ -61,3 +71,10 @@ class PlanCard(QWidget):
         if event.button() == Qt.MouseButton.LeftButton:
             self.clicked.emit(self.plan_id)
         super().mousePressEvent(event)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.clicked.emit(self.plan_id)
+            event.accept()
+            return
+        super().keyPressEvent(event)

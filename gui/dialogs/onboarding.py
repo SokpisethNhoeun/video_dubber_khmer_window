@@ -275,7 +275,32 @@ class AccessOnboardingDialog(QDialog):
             cards_row.addWidget(card)
         layout.addLayout(cards_row)
 
-        self.buy_button = QPushButton("Buy with Bakong KHQR")
+        self.selected_plan_summary = QLabel("No plan selected")
+        self.selected_plan_summary.setObjectName("InlineFeedback")
+        self.selected_plan_summary.setProperty("state", "neutral")
+        self.selected_plan_summary.setWordWrap(True)
+        layout.addWidget(self.selected_plan_summary)
+
+        promo_row = QHBoxLayout()
+        promo_label = QLabel("Promo code (optional)")
+        self.promo_code = QLineEdit()
+        self.promo_code.setPlaceholderText("Example: SAVE20")
+        self.promo_code.setMaxLength(30)
+        self.promo_code.setClearButtonEnabled(True)
+        self.promo_code.setAccessibleName("Optional promo code")
+        self.promo_code.editingFinished.connect(
+            lambda: self.promo_code.setText(self.promo_code.text().strip().upper())
+        )
+        promo_row.addWidget(promo_label)
+        promo_row.addWidget(self.promo_code, 1)
+        layout.addLayout(promo_row)
+
+        promo_help = QLabel("Your promo code will be checked when checkout is created.")
+        promo_help.setObjectName("PageDesc")
+        promo_help.setWordWrap(True)
+        layout.addWidget(promo_help)
+
+        self.buy_button = QPushButton("Select a plan to continue")
         self.buy_button.setIcon(themed_icon("mdi.qrcode"))
         self.buy_button.setEnabled(False)
         self.buy_button.clicked.connect(self._buy)
@@ -527,11 +552,34 @@ class AccessOnboardingDialog(QDialog):
         self._selected_plan = plan_id
         for pid, card in self._plan_cards.items():
             card.set_selected(pid == plan_id)
+        plan = next((item for item in PLAN_DEFINITIONS if item[0] == plan_id), None)
+        if plan:
+            _plan_id, name, price, _features, _recommended = plan
+            self.selected_plan_summary.setText(f"Selected: {name} — {price}")
+            self.selected_plan_summary.setProperty("state", "success")
+            self._polish(self.selected_plan_summary)
         self._refresh_buy_button()
 
     def _refresh_buy_button(self) -> None:
-        ready = bool(self._email_verification_token) and bool(self._selected_plan)
+        verified = bool(self._email_verification_token)
+        selected = bool(self._selected_plan)
+        ready = verified and selected and not self._checkout_created
         self.buy_button.setEnabled(ready)
+        if self._checkout_created:
+            self.buy_button.setText("Checkout created — complete payment below")
+            return
+        if not selected:
+            self.buy_button.setText("Select a plan to continue")
+            self.buy_status.setText("Choose one subscription plan above.")
+            return
+        plan = next((item for item in PLAN_DEFINITIONS if item[0] == self._selected_plan), None)
+        plan_text = f"{plan[1]} — {plan[2]}" if plan else self._selected_plan
+        if not verified:
+            self.buy_button.setText("Verify Gmail to continue")
+            self.buy_status.setText(f"{plan_text} selected. Verify your Gmail on Step 1 before purchasing.")
+            return
+        self.buy_button.setText(f"Continue with {plan_text}")
+        self.buy_status.setText("Ready to create your Bakong KHQR checkout.")
 
     @staticmethod
     def _render_qr(data: str) -> QPixmap:
@@ -567,19 +615,37 @@ class AccessOnboardingDialog(QDialog):
         if not self._email_verification_token:
             QMessageBox.warning(self, "Purchase", "Verify your Gmail OTP first.")
             return
+        original_text = self.buy_button.text()
+        checkout_error = ""
         self.buy_button.setEnabled(False)
-        self.buy_button.setText("Creating checkout...")
+        self.buy_button.setText("Creating secure checkout...")
         QApplication.processEvents()
-        result = client.create_checkout(email, self._selected_plan, self._email_verification_token)
-        self.buy_button.setText("Buy with Bakong KHQR")
+        try:
+            result = client.create_checkout(
+                email,
+                self._selected_plan,
+                self._email_verification_token,
+                self.promo_code.text(),
+            )
+        except Exception as exc:
+            result = None
+            checkout_error = str(exc)
+            QMessageBox.warning(self, "Purchase", str(exc))
+        finally:
+            self.buy_button.setText(original_text)
+        if result is None:
+            self._refresh_buy_button()
+            self._set_inline_feedback(self.buy_status, f"Could not create checkout: {checkout_error}", False)
+            return
         if not result.created:
-            self.buy_button.setEnabled(True)
+            self._refresh_buy_button()
             self._set_inline_feedback(self.buy_status, result.message, False)
             QMessageBox.warning(self, "Purchase", result.message)
             return
         self._checkout_url = result.checkout_url
         self._payment_reference_id = result.reference_id
         self._checkout_created = True
+        self._refresh_buy_button()
         self.open_checkout_link.setVisible(True)
         if result.qr_string:
             self.qr_label.setPixmap(self._render_qr(result.qr_string))
@@ -669,12 +735,10 @@ class AccessOnboardingDialog(QDialog):
 
     def _email_changed(self) -> None:
         self._email_verification_token = ""
-        self.buy_button.setEnabled(False)
         self.email_status.setText("Verify this Gmail address before purchasing.")
         self.email_status.setProperty("state", "neutral")
         self._polish(self.email_status)
-        self.buy_status.setText("Verify your Gmail on Step 1, then choose a plan.")
-        self.buy_status.setStyleSheet("")
+        self._refresh_buy_button()
         self.stepper.set_completed(self._completed_steps())
 
     def _verify_otp(self) -> None:
@@ -688,10 +752,11 @@ class AccessOnboardingDialog(QDialog):
             result = client.verify_email_otp(self.email.text(), self.otp_code.text())
             self._set_inline_feedback(self.email_status, result.message, result.success)
             self._email_verification_token = result.verification_token if result.success else ""
-            self.buy_button.setEnabled(result.success)
+            self._refresh_buy_button()
             if result.success:
                 self._otp_timer.stop()
-                self.buy_status.setText("Gmail verified. Choose a plan and buy with Bakong KHQR.")
+                if not self._selected_plan:
+                    self.buy_status.setText("Gmail verified. Choose a plan and buy with Bakong KHQR.")
                 self.buy_status.setStyleSheet("")
                 self.stepper.set_completed(self._completed_steps())
                 QTimer.singleShot(400, lambda: self._go_to_step(2))

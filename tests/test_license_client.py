@@ -52,3 +52,44 @@ def test_otp_request_surfaces_fastapi_validation_message():
 
     assert result.success is False
     assert result.message == "value is not a valid email address"
+
+
+def test_checkout_sends_normalized_optional_promo_code():
+    client = LicenseClient("https://license.example")
+
+    def fake_urlopen(request, timeout):
+        assert timeout == 15.0
+        payload = json.loads(request.data.decode("utf-8"))
+        assert payload == {
+            "email": "person@example.com",
+            "plan": "yearly",
+            "email_verification_token": "verified-token",
+            "promo_code": "SAVE20",
+        }
+        return _Response({
+            "checkout_url": "https://license.example/pay/PAY-1",
+            "reference_id": "PAY-1",
+            "message": "Payment request created.",
+        })
+
+    with patch("licensing.client.urllib.request.urlopen", side_effect=fake_urlopen):
+        result = client.create_checkout(
+            "person@example.com", "yearly", "verified-token", "  save20  "
+        )
+
+    assert result.created is True
+    assert result.reference_id == "PAY-1"
+
+
+def test_checkout_sends_null_when_promo_code_is_empty():
+    client = LicenseClient("https://license.example")
+
+    def fake_urlopen(request, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        assert payload["promo_code"] is None
+        return _Response({"checkout_url": "https://license.example/pay/PAY-2"})
+
+    with patch("licensing.client.urllib.request.urlopen", side_effect=fake_urlopen):
+        result = client.create_checkout("person@example.com", "monthly", "verified-token")
+
+    assert result.created is True
