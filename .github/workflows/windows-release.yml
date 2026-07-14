@@ -97,10 +97,32 @@ jobs:
           if (-not $Signtool) { throw "signtool.exe was not found." }
           $NativeFiles = Get-ChildItem "dist\KhmerVideoDubber" -Recurse -File | Where-Object { $_.Extension -in ".exe", ".dll", ".pyd" }
           if (-not $NativeFiles) { throw "No native files were found in the frozen application." }
-          foreach ($File in $NativeFiles) {
-            & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD $File.FullName
-            if ($LASTEXITCODE -ne 0) { throw "Signing failed for $($File.FullName)" }
+
+          $MainExecutable = (Resolve-Path "dist\KhmerVideoDubber\KhmerVideoDubber.exe").Path
+          $FilesToSign = @($NativeFiles | Where-Object {
+            $_.FullName -ne $MainExecutable -and
+            (Get-AuthenticodeSignature $_.FullName).Status -ne "Valid"
+          })
+          $AlreadySigned = $NativeFiles.Count - $FilesToSign.Count - 1
+          Write-Host "Native files: $($NativeFiles.Count); already signed: $AlreadySigned; signing locally: $($FilesToSign.Count)."
+
+          $BatchSize = 40
+          for ($Offset = 0; $Offset -lt $FilesToSign.Count; $Offset += $BatchSize) {
+            $End = [Math]::Min($Offset + $BatchSize - 1, $FilesToSign.Count - 1)
+            $Batch = @($FilesToSign[$Offset..$End])
+            $Arguments = @("sign", "/fd", "SHA256", "/f", $Pfx, "/p", $env:SIGNING_PASSWORD)
+            $Arguments += @($Batch | ForEach-Object { $_.FullName })
+            Write-Host "Signing native files $($Offset + 1)-$($End + 1) of $($FilesToSign.Count) without network timestamps..."
+            & $Signtool @Arguments
+            if ($LASTEXITCODE -ne 0) { throw "Signing failed for native-file batch starting at $($Offset + 1)." }
           }
+
+          # Only the main executable receives a network timestamp. Timestamping every bundled
+          # dependency can make the workflow take hours and lets one network request hang it.
+          packaging/windows/sign-file.ps1 `
+            -Signtool $Signtool -Pfx $Pfx -Password $env:SIGNING_PASSWORD `
+            -FilePath $MainExecutable -TimestampUrl "http://timestamp.digicert.com" `
+            -TimeoutSeconds 120
           $PublicCert = [Security.Cryptography.X509Certificates.X509Certificate2]::new($Cer)
           foreach ($StoreName in @("Root", "TrustedPublisher")) {
             $Store = [Security.Cryptography.X509Certificates.X509Store]::new(
@@ -147,9 +169,11 @@ jobs:
         run: |
           $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           $Signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1).FullName
-          & $Signtool sign /fd SHA256 /td SHA256 /tr http://timestamp.digicert.com /f $Pfx /p $env:SIGNING_PASSWORD "packaging\windows\release\KhmerVideoDubber-Setup-${{ inputs.version }}.exe"
-          if ($LASTEXITCODE -ne 0) { throw "Installer signing failed." }
           $Installer = "packaging\windows\release\KhmerVideoDubber-Setup-${{ inputs.version }}.exe"
+          packaging/windows/sign-file.ps1 `
+            -Signtool $Signtool -Pfx $Pfx -Password $env:SIGNING_PASSWORD `
+            -FilePath $Installer -TimestampUrl "http://timestamp.digicert.com" `
+            -TimeoutSeconds 120
           $Signature = Get-AuthenticodeSignature $Installer
           if ($Signature.Status -ne "Valid") { throw "Installer signature verification failed: $($Signature.Status)" }
           Copy-Item (Join-Path $env:RUNNER_TEMP "publisher.cer") "packaging\windows\release\KhmerVideoDubber-Publisher.cer" -Force

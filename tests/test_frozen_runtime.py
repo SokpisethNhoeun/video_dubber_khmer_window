@@ -59,6 +59,12 @@ def test_windows_release_signs_and_verifies_every_native_file() -> None:
     assert "X509Store" in workflow
     assert "FindByThumbprint" in workflow
     assert "certutil.exe" not in workflow
+    assert '$BatchSize = 40' in workflow
+    assert "already signed" in workflow
+    assert "without network timestamps" in workflow
+    assert workflow.count("http://timestamp.digicert.com") == 2
+    assert workflow.count("-TimeoutSeconds 120") == 2
+    assert workflow.count("packaging/windows/sign-file.ps1") == 2
     assert "WINDOWS_SIGNING_CERT_BASE64" not in workflow
     assert "KhmerVideoDubber-Publisher.cer" in workflow
 
@@ -73,6 +79,14 @@ def test_self_signed_certificate_helper_keeps_private_output_ignored() -> None:
     assert "WINDOWS_SIGNING_PFX_BASE64.txt" in script
     assert "WINDOWS_SIGNING_CERT_BASE64.txt" not in script
     assert "packaging/windows/signing-output/" in gitignore
+
+
+def test_timestamped_signing_helper_has_a_hard_timeout() -> None:
+    script = (ROOT / "packaging/windows/sign-file.ps1").read_text(encoding="utf-8")
+
+    assert "WaitForExit($TimeoutSeconds * 1000)" in script
+    assert "$Process.Kill($true)" in script
+    assert "ArgumentList.Add" in script
 
 
 def test_windows_subprocesses_are_hidden(monkeypatch) -> None:
