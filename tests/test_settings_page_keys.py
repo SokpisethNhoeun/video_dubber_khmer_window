@@ -49,3 +49,34 @@ def test_settings_page_keys_readonly_and_toggles(monkeypatch, tmp_path) -> None:
 
     page.close()
     assert app is not None
+
+
+def test_settings_lists_only_downloaded_whisper_models(monkeypatch) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr("config.paths.installed_whisper_models", lambda _models: ["tiny", "small"])
+
+    page = SettingsPage()
+
+    assert [page.whisper_model.itemData(i) for i in range(page.whisper_model.count())] == [
+        "tiny", "small"
+    ]
+    assert page.whisper_model.currentData() == "tiny"
+    monkeypatch.setattr("config.paths.installed_whisper_models", lambda _models: ["tiny", "small", "medium"])
+    page.refresh_installed_models("medium")
+    assert page.whisper_model.currentData() == "medium"
+    page.close()
+    assert app is not None
+
+
+def test_settings_disables_model_selector_when_none_are_downloaded(monkeypatch) -> None:
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    monkeypatch.setattr("config.paths.installed_whisper_models", lambda _models: [])
+
+    page = SettingsPage()
+
+    assert page.whisper_model.isEnabled() is False
+    assert page.whisper_model.currentData() == ""
+    page.close()
+    assert app is not None

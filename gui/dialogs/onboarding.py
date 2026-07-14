@@ -357,11 +357,16 @@ class AccessOnboardingDialog(QDialog):
         layout.setSpacing(12)
         layout.addWidget(self._heading("Add and validate your Gemini API key"))
 
+        get_key_link = QLabel('<a href="https://aistudio.google.com/app/apikey" style="color:#22d3c8;">🔑 Get your free Gemini API key here →</a>')
+        get_key_link.setOpenExternalLinks(True)
+        get_key_link.setTextFormat(Qt.TextFormat.RichText)
+        layout.addWidget(get_key_link)
+
         form_widget = QWidget()
         form = QFormLayout(form_widget)
         self.gemini_key = QLineEdit(os.getenv("GEMINI_API_KEY", ""))
         self.gemini_key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.gemini_key.setPlaceholderText("Customer's own Gemini API key")
+        self.gemini_key.setPlaceholderText("Paste your Gemini API key here")
         self.gemini_key.returnPressed.connect(self._test_gemini)
         self.test_gemini_button = QPushButton("Save & Test Gemini Key")
         self.test_gemini_button.setIcon(themed_icon("mdi.robot-outline"))
@@ -688,7 +693,10 @@ class AccessOnboardingDialog(QDialog):
                 self._otp_timer.stop()
                 self.buy_status.setText("Gmail verified. Choose a plan and buy with Bakong KHQR.")
                 self.buy_status.setStyleSheet("")
-            self.stepper.set_completed(self._completed_steps())
+                self.stepper.set_completed(self._completed_steps())
+                QTimer.singleShot(400, lambda: self._go_to_step(2))
+            else:
+                self.stepper.set_completed(self._completed_steps())
         finally:
             self.verify_otp_button.setEnabled(True)
             self.verify_otp_button.setText("Verify")
@@ -756,35 +764,63 @@ class AccessOnboardingDialog(QDialog):
             self._model_manager.resume()
         else:
             self._model_manager = ModelDownloadManager(model)
+
+        # Ensure any previous thread is finished before starting a new one
+        old_thread = getattr(self, "_download_thread", None)
+        if old_thread and old_thread.isRunning():
+            old_thread.quit()
+            old_thread.wait(3000)
+
         for name, other in self._model_rows.items():
             other["button"].setEnabled(name == model or other["state"] == "done")
+
         self._download_thread = QThread(self)
         self._download_worker = ModelDownloadWorker(self._model_manager)
         self._download_worker.moveToThread(self._download_thread)
         self._download_thread.started.connect(self._download_worker.run)
-        self._download_worker.progress.connect(lambda filename, done, total, speed, eta: self._model_progress(model, filename, done, total, speed, eta))
+        self._download_worker.progress.connect(
+            lambda filename, done, total, speed, eta: self._model_progress(model, filename, done, total, speed, eta)
+        )
         self._download_worker.status.connect(lambda state: self._model_state(model, state))
         self._download_worker.finished.connect(lambda _path: self._model_complete(model))
         self._download_worker.failed.connect(lambda message: self._model_failed(model, message))
+        # Only quit thread on terminal states — NOT on intermediate "downloading" state
         self._download_worker.finished.connect(self._download_thread.quit)
         self._download_worker.failed.connect(self._download_thread.quit)
-        self._download_worker.status.connect(lambda state: self._download_thread.quit() if state in {"paused", "cancelled"} else None)
+        self._download_worker.status.connect(
+            lambda state: self._download_thread.quit() if state in {"paused", "cancelled"} else None
+        )
         self._download_thread.finished.connect(self._download_worker.deleteLater)
         self._download_thread.finished.connect(self._download_thread.deleteLater)
         self._download_thread.start()
 
     def _model_progress(self, model: str, filename: str, done: int, total: int, speed: float, eta: object) -> None:
         row = self._model_rows[model]
-        row["progress"].setValue(int(done * 100 / total) if total else 0)
+        if total > 0:
+            row["progress"].setValue(int(done * 100 / total))
+        else:
+            # Unknown total — show indeterminate progress
+            row["progress"].setRange(0, 0)
         eta_text = f" · ETA {int(float(eta))}s" if eta is not None else ""
         row["detail"].setText(f"{speed / 1024 / 1024:.1f} MB/s{eta_text}")
 
     def _model_state(self, model: str, state: str) -> None:
         row = self._model_rows[model]
-        row["state"] = state
-        row["button"].setText("Pause" if state == "downloading" else "Resume" if state == "paused" else "Download")
-        row["cancel"].setVisible(state in {"downloading", "paused"})
-        row["detail"].setProperty("state", "active" if state == "downloading" else "waiting")
+        row["state"] = state if state != "connecting" else "downloading"
+        if state == "connecting":
+            # Show indeterminate spinner while fetching file list from HuggingFace
+            row["progress"].setRange(0, 0)
+            row["detail"].setText("Connecting...")
+            row["button"].setText("Pause")
+            row["cancel"].setVisible(True)
+            row["detail"].setProperty("state", "active")
+        else:
+            # Reset to determinate progress bar unless actively downloading
+            if state != "downloading":
+                row["progress"].setRange(0, 100)
+            row["button"].setText("Pause" if state == "downloading" else "Resume" if state == "paused" else "Download")
+            row["cancel"].setVisible(state in {"downloading", "paused"})
+            row["detail"].setProperty("state", "active" if state == "downloading" else "waiting")
         self._polish(row["detail"])
 
     def _cancel_model(self, model: str) -> None:

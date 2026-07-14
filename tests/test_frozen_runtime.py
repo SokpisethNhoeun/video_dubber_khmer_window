@@ -3,6 +3,9 @@ from pathlib import Path
 from config import runtime
 
 
+ROOT = Path(__file__).resolve().parents[1]
+
+
 def test_source_working_root_is_project_root() -> None:
     assert runtime.working_root() == Path(runtime.__file__).resolve().parents[1]
 
@@ -27,3 +30,22 @@ def test_bundled_tools_prepend_path(monkeypatch, tmp_path) -> None:
     runtime.configure_bundled_tools()
 
     assert runtime.os.environ["PATH"].split(runtime.os.pathsep)[0] == str(bin_dir)
+
+
+def test_windows_build_declares_and_collects_demucs() -> None:
+    requirements = (ROOT / "requirements.txt").read_text(encoding="utf-8")
+    spec = (ROOT / "packaging/windows/KhmerVideoDubber.spec").read_text(encoding="utf-8")
+    main = (ROOT / "main.py").read_text(encoding="utf-8")
+
+    assert "demucs>=4,<5" in requirements
+    assert '"demucs"' in spec
+    assert "import demucs.separate" in main
+    assert "import pyannote.audio" in main
+    assert '"pyannote.audio"' in spec
+
+
+def test_windows_subprocesses_are_hidden(monkeypatch) -> None:
+    monkeypatch.setattr(runtime.os, "name", "nt")
+    monkeypatch.setattr(runtime.subprocess, "CREATE_NO_WINDOW", 0x08000000, raising=False)
+
+    assert runtime.windows_creation_flags() == 0x08000000

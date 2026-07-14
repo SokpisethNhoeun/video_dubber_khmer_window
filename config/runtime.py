@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -57,3 +58,10 @@ def configure_bundled_tools() -> None:
 def executable_for(name: str) -> str | None:
     bundled = bundled_binary(name)
     return str(bundled) if bundled else shutil.which(name)
+
+
+def windows_creation_flags() -> int:
+    """Prevent child processes from opening terminal windows in the GUI app."""
+    if os.name != "nt":
+        return 0
+    return int(getattr(subprocess, "CREATE_NO_WINDOW", 0))

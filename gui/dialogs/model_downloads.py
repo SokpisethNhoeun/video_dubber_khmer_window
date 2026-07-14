@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QThread, Qt
+from PyQt6.QtCore import QThread, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QDialog,
     QHBoxLayout,
@@ -36,6 +36,8 @@ COSYVOICE_MODEL_ID = "FunAudioLLM/CosyVoice2-0.5B"
 
 class ModelDownloadsDialog(QDialog):
     """Manage resumable customer model downloads after onboarding."""
+
+    model_installed = pyqtSignal(str)
 
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
@@ -223,30 +225,51 @@ class ModelDownloadsDialog(QDialog):
 
     def _progress(self, model: str, _filename: str, done: int, total: int, speed: float, eta: object) -> None:
         row = self._rows[model]
-        row["progress"].setValue(int(done * 100 / total) if total else 0)
+        if total:
+            row["progress"].setRange(0, 100)
+            row["progress"].setValue(int(done * 100 / total))
+        else:
+            row["progress"].setRange(0, 0)
         eta_text = f" · {int(float(eta))}s left" if eta is not None else ""
-        row["detail"].setText(f"{speed / 1024 / 1024:.1f} MB/s{eta_text}")
+        downloaded = f"{done / 1024 / 1024:.1f} MB · " if not total else ""
+        row["detail"].setText(f"{downloaded}{speed / 1024 / 1024:.1f} MB/s{eta_text}")
 
     def _state(self, model: str, state: str) -> None:
         row = self._rows[model]
         row["state"] = state
-        row["button"].setText("Pause" if state == "downloading" else "Resume" if state == "paused" else "Download")
-        row["cancel"].setVisible(state in {"downloading", "paused"})
+        if state == "connecting":
+            row["progress"].setRange(0, 0)
+            row["detail"].setText("Connecting…")
+            row["button"].setText("Connecting…")
+            row["button"].setEnabled(False)
+        elif state == "downloading":
+            row["button"].setText("Pause")
+            row["button"].setEnabled(True)
+        elif state == "paused":
+            row["button"].setText("Resume")
+            row["button"].setEnabled(True)
+        else:
+            row["button"].setText("Download")
+        row["cancel"].setVisible(state in {"connecting", "downloading", "paused"})
 
     def _cancel(self, model: str) -> None:
         if self._manager:
             self._manager.cancel()
         row = self._rows[model]
         row["state"] = "waiting"
+        row["progress"].setRange(0, 100)
         row["progress"].setValue(0)
         row["detail"].setText("Cancelled")
         row["button"].setText("Download")
         row["button"].setEnabled(True)
         row["cancel"].setVisible(False)
+        self.model_installed.emit(model)
+        self._enable_other_rows()
 
     def _complete(self, model: str) -> None:
         row = self._rows[model]
         row["state"] = "done"
+        row["progress"].setRange(0, 100)
         row["progress"].setValue(100)
         row["detail"].setText("Installed")
         row["button"].setText("Installed")
@@ -257,6 +280,7 @@ class ModelDownloadsDialog(QDialog):
     def _failed(self, model: str, message: str) -> None:
         row = self._rows[model]
         row["state"] = "failed"
+        row["progress"].setRange(0, 100)
         row["detail"].setText(message[:80])
         row["button"].setText("Retry")
         row["button"].setEnabled(True)

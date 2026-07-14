@@ -208,8 +208,8 @@ def request_otp(body: OtpRequest, request: Request) -> dict:
     try:
         send_email(email, "Khmer Video Dubber verification code", f"Your verification code is {code}. It expires in {settings.otp_minutes} minutes.")
     except RuntimeError as exc:
-        raise HTTPException(503, str(exc)) from exc
-    return {"message": "Verification code sent.", "expires_in_seconds": settings.otp_minutes * 60, "resend_after_seconds": 60}
+        raise HTTPException(503, "Email delivery is not available right now. Please contact support to receive your verification code.") from exc
+    return {"message": "Verification code sent. Check your inbox.", "expires_in_seconds": settings.otp_minutes * 60, "resend_after_seconds": 60}
 
 
 @router.post("/v1/auth/email-otp/verify")

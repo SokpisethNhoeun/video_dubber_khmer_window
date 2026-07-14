@@ -26,5 +26,12 @@ def test_download_dialog_lists_managed_models(monkeypatch) -> None:
         "tiny", "base", "small", "medium", "large-v3", "nllb", "qwen3", "cosyvoice"
     }
     assert dialog.windowTitle() == "Model Downloads"
+    dialog._state("nllb", "connecting")
+    assert dialog._rows["nllb"]["progress"].maximum() == 0
+    assert dialog._rows["nllb"]["detail"].text() == "Connecting…"
+    assert dialog._rows["nllb"]["button"].isEnabled() is False
+    dialog._state("nllb", "downloading")
+    assert dialog._rows["nllb"]["button"].isEnabled() is True
+    assert dialog._rows["nllb"]["button"].text() == "Pause"
     dialog.close()
     assert app is not None

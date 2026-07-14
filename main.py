@@ -48,6 +48,14 @@ def main() -> int:
         if not executable_for("ffmpeg") or not executable_for("ffprobe"):
             print("SMOKE_TEST_FAILED: bundled FFmpeg tools are unavailable")
             return 2
+        try:
+            import demucs.separate  # noqa: F401
+            import pyannote.audio  # noqa: F401
+            import sklearn  # noqa: F401
+            import speechbrain  # noqa: F401
+        except Exception as exc:
+            print(f"SMOKE_TEST_FAILED: bundled audio/model runtime is unavailable: {exc}")
+            return 4
         if not os.getenv("LICENSE_SERVER_URL", "").startswith("https://"):
             print("SMOKE_TEST_FAILED: production LICENSE_SERVER_URL is unavailable")
             return 3

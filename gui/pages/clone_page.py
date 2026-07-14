@@ -14,6 +14,8 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from config.paths import installed_clone_backends
+
 FILE_DIALOG_OPTIONS = QFileDialog.Option(0)
 
 
@@ -72,10 +74,16 @@ class ClonePage(QWidget):
         clone_form.setSpacing(12)
 
         self.clone_backend = QComboBox()
-        self.clone_backend.addItem("Qwen3-TTS 1.7B (best clone + emotion)", "qwen3")
-        self.clone_backend.addItem("CosyVoice 2 (emotional voice clone)", "cosyvoice")
-        self.clone_backend.addItem("XTTS-v2 (direct voice clone)", "xtts")
-        self.clone_backend.addItem("OpenVoice (timbre transfer)", "openvoice")
+        installed_backends = installed_clone_backends()
+        for label, backend in installed_backends:
+            self.clone_backend.addItem(label, backend)
+        if not installed_backends:
+            self.clone_backend.addItem("No clone backend installed — open Downloads", "")
+            self.clone_backend.setEnabled(False)
+            self.rvc_enabled.setEnabled(False)
+            self.rvc_enabled.setToolTip(
+                "Install a supported voice-cloning runtime and model before enabling cloning."
+            )
         clone_form.addRow("Clone Backend", self.clone_backend)
 
         ref_row = QHBoxLayout()

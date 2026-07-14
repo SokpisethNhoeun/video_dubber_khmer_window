@@ -42,7 +42,15 @@ def _package_version(package: str) -> str | None:
 
 def _run_version_command(command: list[str]) -> str | None:
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, check=False, timeout=8)
+        completed = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+            timeout=8,
+        )
     except Exception:
         return None
     if completed.returncode != 0:
@@ -228,6 +236,8 @@ print(json.dumps(payload))
             [python_path, "-c", script],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             check=False,
             timeout=20,
         )

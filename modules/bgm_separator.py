@@ -2,16 +2,24 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
-from threading import Event
+from threading import Event, Thread
+
+from config.runtime import windows_creation_flags
 
 def install_demucs_if_needed(log_cb = None) -> None:
     try:
         import demucs  # noqa: F401
     except ImportError:
+        if getattr(sys, "frozen", False):
+            raise RuntimeError(
+                "Background music preservation is unavailable because Demucs is missing from "
+                "this installation. Reinstall the latest Khmer Video Dubber setup package."
+            )
         raise RuntimeError(
             "Demucs is required for background music preservation but is not installed. "
-            "Install it with: pip install demucs"
+            "Install it with: python -m pip install 'demucs>=4,<5'"
         )
 
 def _is_cuda_error(stderr_text: str) -> bool:
@@ -26,36 +34,43 @@ def _run_demucs(
     log_cb=None,
 ) -> None:
     """Run a Demucs subprocess, raising on failure or cancellation."""
-    process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=windows_creation_flags(),
+    )
     stderr_lines: list[str] = []
-    import time
+
+    def read_stderr() -> None:
+        if process.stderr:
+            for line in process.stderr:
+                stderr_lines.append(line)
+
+    stderr_reader = Thread(target=read_stderr, name="demucs-stderr", daemon=True)
+    stderr_reader.start()
     try:
         while process.poll() is None:
             if cancel_event.is_set():
                 process.terminate()
-                process.wait(timeout=5)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
                 raise RuntimeError("Processing cancelled by user")
-            if process.stderr:
-                import select
-                ready, _, _ = select.select([process.stderr], [], [], 0.5)
-                if ready:
-                    line = process.stderr.readline()
-                    if line:
-                        stderr_lines.append(line)
-                else:
-                    time.sleep(0.1)
-            else:
-                time.sleep(0.5)
+            time.sleep(0.1)
     except RuntimeError:
         raise
     except Exception:
         process.terminate()
         process.wait()
         raise
-
-    remaining = process.stderr.read() if process.stderr else ""
-    if remaining:
-        stderr_lines.append(remaining)
+    finally:
+        stderr_reader.join(timeout=5)
 
     if process.returncode != 0:
         stderr = "".join(stderr_lines)

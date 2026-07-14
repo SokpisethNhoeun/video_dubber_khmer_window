@@ -10,7 +10,7 @@ from threading import Event
 from typing import Callable, TypedDict
 
 from core.context import CancellationError, Segment
-from config.runtime import executable_for
+from config.runtime import executable_for, windows_creation_flags
 
 
 ProgressCallback = Callable[[int], None]
@@ -53,7 +53,13 @@ def ensure_ffmpeg() -> None:
 
 
 def _run_checked(command: list[str], cancel_event: Event | None = None) -> None:
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, text=True)
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        creationflags=windows_creation_flags(),
+    )
     try:
         while process.poll() is None:
             if cancel_event and cancel_event.is_set():
@@ -83,7 +89,10 @@ def ffprobe_duration(media_path: Path) -> float:
         "default=noprint_wrappers=1:nokey=1",
         str(media_path),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False, creationflags=windows_creation_flags(),
+    )
     if result.returncode != 0:
         raise FFmpegError(result.stderr.strip() or f"Could not inspect duration for {media_path}")
     raw = result.stdout.strip()
@@ -109,7 +118,10 @@ def has_audio_stream(media_path: Path) -> bool:
         "default=noprint_wrappers=1:nokey=1",
         str(media_path),
     ]
-    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        command, capture_output=True, text=True, encoding="utf-8", errors="replace",
+        check=False, creationflags=windows_creation_flags(),
+    )
     if result.returncode != 0:
         return False
     return "audio" in result.stdout.strip()
@@ -146,7 +158,15 @@ def run_ffmpeg_progress(
     progress_cb: ProgressCallback | None,
     cancel_event: Event | None,
 ) -> None:
-    process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+    process = subprocess.Popen(
+        command,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        creationflags=windows_creation_flags(),
+    )
     try:
         last_progress = -1
         assert process.stderr is not None

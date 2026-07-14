@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 from platformdirs import user_data_dir
 
@@ -54,3 +55,30 @@ def is_whisper_model_downloaded(model_name: str) -> bool:
     repo_id = f"{FASTER_WHISPER_MODEL_PREFIX}-{model_name}"
     result = try_to_load_from_cache(repo_id, filename="model.bin", cache_dir=str(whisper_cache_dir()))
     return isinstance(result, str)
+
+
+def installed_whisper_models(model_names: list[str]) -> list[str]:
+    """Return selectable Whisper models whose checkpoints exist in the user cache."""
+    return [model for model in model_names if is_whisper_model_downloaded(model)]
+
+
+def installed_clone_backends() -> list[tuple[str, str]]:
+    """Return clone backends with both a usable runtime and required checkpoint."""
+    available: list[tuple[str, str]] = []
+    qwen_python = Path(os.getenv("QWEN3_TTS_PYTHON", "")).expanduser()
+    if qwen_python.is_file() and repository_snapshot_exists(
+        "Qwen/Qwen3-TTS-12Hz-1.7B-Base", qwen_cache_dir()
+    ):
+        available.append(("Qwen3-TTS 1.7B (best clone + emotion)", "qwen3"))
+    cosy_python = Path(os.getenv("COSYVOICE_PYTHON", "")).expanduser()
+    if cosy_python.is_file() and repository_snapshot_exists(
+        "FunAudioLLM/CosyVoice2-0.5B", cosyvoice_cache_dir()
+    ):
+        available.append(("CosyVoice 2 (emotional voice clone)", "cosyvoice"))
+    shared_python = Path(os.getenv("OPENVOICE_PYTHON", "")).expanduser()
+    if shared_python.is_file():
+        available.append(("XTTS-v2 (direct voice clone)", "xtts"))
+        checkpoint = Path(os.getenv("OPENVOICE_CHECKPOINT_DIR", "")).expanduser()
+        if checkpoint.is_dir():
+            available.append(("OpenVoice (timbre transfer)", "openvoice"))
+    return available

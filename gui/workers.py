@@ -19,7 +19,11 @@ from modules.audio_utils import extract_audio
 from modules.diarizer import detect_speakers
 from modules.video_import import DownloadCancelledError, VideoImportError, VideoImportService
 from modules.gemini_key_validator import validate_gemini_api_key
-from modules.model_downloader import DownloadCancelled, DownloadPaused, ModelDownloadManager
+from modules.model_downloader import (
+    DownloadCancelled,
+    DownloadPaused,
+    HuggingFaceModelDownloadManager,
+)
 
 
 class GeminiValidationWorker(QObject):
@@ -44,15 +48,24 @@ class ModelDownloadWorker(QObject):
     finished = pyqtSignal(str)
     failed = pyqtSignal(str)
 
-    def __init__(self, manager: ModelDownloadManager) -> None:
+    def __init__(self, manager: HuggingFaceModelDownloadManager) -> None:
         super().__init__()
         self.manager = manager
 
     @pyqtSlot()
     def run(self) -> None:
         try:
-            self.status.emit("downloading")
-            result = self.manager.download(self.progress.emit)
+            self.status.emit("connecting")
+            started = False
+
+            def report_progress(filename, done, total, speed, eta):
+                nonlocal started
+                if not started:
+                    started = True
+                    self.status.emit("downloading")
+                self.progress.emit(filename, done, total, speed, eta)
+
+            result = self.manager.download(report_progress)
             self.finished.emit(str(result))
         except DownloadPaused:
             self.status.emit("paused")

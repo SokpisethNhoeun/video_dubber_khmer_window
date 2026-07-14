@@ -25,6 +25,14 @@ for package in (
     "huggingface_hub",
     "torch",
     "torchaudio",
+    "demucs",
+    "julius",
+    "openunmix",
+    "dora",
+    "pyannote.audio",
+    "speechbrain",
+    "sklearn",
+    "joblib",
     "edge_tts",
 ):
     package_datas, package_binaries, package_hidden = collect_all(package)
@@ -35,6 +43,7 @@ for package in (
 hiddenimports += collect_submodules("modules")
 hiddenimports += collect_submodules("gui")
 hiddenimports += collect_submodules("core")
+hiddenimports.append("lameenc")
 
 release_config = GENERATED / "release.json"
 if not release_config.is_file():

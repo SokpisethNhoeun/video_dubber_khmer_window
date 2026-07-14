@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
 )
 
 from config.models import WHISPER_MODELS
+from config import paths as model_paths
 
 
 class SettingsPage(QWidget):
@@ -100,9 +101,7 @@ class SettingsPage(QWidget):
         pipeline_form.addRow("Preset", self.preset)
 
         self.whisper_model = QComboBox()
-        for model in WHISPER_MODELS:
-            self.whisper_model.addItem(model, model)
-        self.whisper_model.setCurrentText("medium")
+        self.refresh_installed_models()
         pipeline_form.addRow("Whisper model", self.whisper_model)
 
         self.device = QComboBox()
@@ -170,7 +169,7 @@ class SettingsPage(QWidget):
 
     def save_state(self) -> dict:
         return {
-            "whisper_model": self.whisper_model.currentText(),
+            "whisper_model": self.whisper_model.currentData() or "",
             "device": self.device.currentData() or "auto",
             "preset": self.preset.currentText(),
             "alignment_mode": self.alignment_mode.currentData(),
@@ -180,7 +179,9 @@ class SettingsPage(QWidget):
         }
 
     def load_state(self, config: dict) -> None:
-        self.whisper_model.setCurrentText(config.get("whisper_model", "medium"))
+        whisper_index = self.whisper_model.findData(config.get("whisper_model", "medium"))
+        if whisper_index >= 0:
+            self.whisper_model.setCurrentIndex(whisper_index)
         device_val = config.get("device", "auto")
         idx = self.device.findData(device_val)
         if idx < 0:
@@ -195,6 +196,19 @@ class SettingsPage(QWidget):
         self.keep_temp_check.setChecked(config.get("keep_temp", False))
         self.persistent_cache_check.setChecked(config.get("persistent_cache", True))
         self.url_import_cookies_file.setText(config.get("url_import_cookies_file", ""))
+
+    def refresh_installed_models(self, preferred: str | None = None) -> None:
+        current = preferred or self.whisper_model.currentData() or "medium"
+        installed_models = model_paths.installed_whisper_models(WHISPER_MODELS)
+        self.whisper_model.clear()
+        for model in installed_models:
+            self.whisper_model.addItem(model, model)
+        self.whisper_model.setEnabled(bool(installed_models))
+        if not installed_models:
+            self.whisper_model.addItem("No model installed — open Downloads", "")
+            return
+        index = self.whisper_model.findData(current)
+        self.whisper_model.setCurrentIndex(index if index >= 0 else 0)
 
     def _browse_url_import_cookies_file(self) -> None:
         path, _ = QFileDialog.getOpenFileName(

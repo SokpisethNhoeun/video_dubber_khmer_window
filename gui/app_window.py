@@ -481,6 +481,11 @@ class AppWindow(QMainWindow):
         dialog = getattr(self, "_model_downloads_dialog", None)
         if dialog is None:
             dialog = ModelDownloadsDialog(self)
+            dialog.model_installed.connect(
+                lambda model: self.settings_page.refresh_installed_models(model)
+                if model in {"tiny", "base", "small", "medium", "large-v3"}
+                else None
+            )
             self._model_downloads_dialog = dialog
         dialog.show()
         dialog.raise_()
@@ -1654,7 +1659,7 @@ class AppWindow(QMainWindow):
             speech_rate=self.speech_rate.value(),
             pitch_hz=self.pitch_hz.value(),
             emotion_strength=float(vg.emotion_strength.value() / 100.0),
-            whisper_model=sp.whisper_model.currentText(),
+            whisper_model=sp.whisper_model.currentData() or "",
             device=sp.device.currentData(),
             voice_female_reference_path=voice_female_ref,
             voice_male_reference_path=voice_male_ref,
@@ -1729,6 +1734,8 @@ class AppWindow(QMainWindow):
             return license_result.message
         if not settings.output_dir.exists():
             return "Select an existing output folder."
+        if not settings.whisper_model:
+            return "Download a Whisper model from Downloads before starting dubbing."
         videos = settings.input_videos or [settings.input_video]
         for video_path in videos:
             if not video_path.exists():
