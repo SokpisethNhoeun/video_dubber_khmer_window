@@ -55,8 +55,9 @@ def test_windows_release_signs_and_verifies_every_native_file() -> None:
     assert '$_ .Extension -in' not in workflow
     assert '$_.Extension -in ".exe", ".dll", ".pyd"' in workflow
     assert "Get-AuthenticodeSignature" in workflow
-    assert "WINDOWS_SIGNING_CERT_BASE64" in workflow
-    assert "does not match WINDOWS_SIGNING_PFX_BASE64" in workflow
+    assert "EphemeralKeySet" in workflow
+    assert "WaitForExit(30000)" in workflow
+    assert "WINDOWS_SIGNING_CERT_BASE64" not in workflow
     assert "KhmerVideoDubber-Publisher.cer" in workflow
 
 
@@ -68,7 +69,7 @@ def test_self_signed_certificate_helper_keeps_private_output_ignored() -> None:
     assert "New-SelfSignedCertificate" in script
     assert "CodeSigningCert" in script
     assert "WINDOWS_SIGNING_PFX_BASE64.txt" in script
-    assert "WINDOWS_SIGNING_CERT_BASE64.txt" in script
+    assert "WINDOWS_SIGNING_CERT_BASE64.txt" not in script
     assert "packaging/windows/signing-output/" in gitignore
 
 
