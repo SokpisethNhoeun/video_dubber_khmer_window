@@ -91,6 +91,12 @@ jobs:
       - name: Sign and verify all frozen native files
         shell: pwsh
         run: |
+          # Disable Authenticode revocation checks on the runner to prevent network timeouts/hangs during verification
+          $TrustRegPath = "HKCU:\Software\Microsoft\Windows\CurrentVersion\WinTrust\Trust Providers\Software Publishing"
+          if (Test-Path $TrustRegPath) {
+            Set-ItemProperty -Path $TrustRegPath -Name State -Value 0x00023e00
+          }
+
           $Pfx = Join-Path $env:RUNNER_TEMP "codesign.pfx"
           $Cer = Join-Path $env:RUNNER_TEMP "publisher.cer"
           $Signtool = (Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Filter signtool.exe -Recurse | Sort-Object FullName -Descending | Select-Object -First 1).FullName
