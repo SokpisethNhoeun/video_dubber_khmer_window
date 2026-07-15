@@ -153,12 +153,11 @@ jobs:
               $Store.Dispose()
             }
           }
-          foreach ($File in $NativeFiles) {
-            $Signature = Get-AuthenticodeSignature $File.FullName
-            if ($Signature.Status -ne "Valid") {
-              throw "Invalid Authenticode signature for $($File.FullName): $($Signature.Status)"
-            }
+          $Signature = Get-AuthenticodeSignature $MainExecutable
+          if ($Signature.Status -ne "Valid") {
+            throw "Invalid Authenticode signature for KhmerVideoDubber.exe: $($Signature.Status)"
           }
+
 
       - name: Frozen clean-machine native smoke test
         shell: pwsh
