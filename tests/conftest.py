@@ -130,3 +130,15 @@ def make_pipeline_settings(tmp_path: Path, **overrides) -> PipelineSettings:
     )
     defaults.update(overrides)
     return PipelineSettings(**defaults)
+
+
+@pytest.fixture(autouse=True)
+def mock_license_validation(monkeypatch):
+    """Automatically mock LicenseClient.validate to return a valid license result during tests."""
+    from licensing.client import LicenseClient, LicenseResult
+    monkeypatch.setattr(
+        LicenseClient,
+        "validate",
+        lambda self: LicenseResult(valid=True, message="Valid license (mocked for tests)", plan="pro")
+    )
+
