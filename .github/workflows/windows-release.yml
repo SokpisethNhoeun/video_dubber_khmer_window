@@ -133,7 +133,7 @@ jobs:
           foreach ($StoreName in @("Root", "TrustedPublisher")) {
             $Store = [Security.Cryptography.X509Certificates.X509Store]::new(
               $StoreName,
-              [Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+              [Security.Cryptography.X509Certificates.StoreLocation]::LocalMachine
             )
             try {
               $Store.Open([Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
@@ -146,7 +146,7 @@ jobs:
               if ($Imported.Count -eq 0) {
                 throw "Signing certificate was not found after importing it into $StoreName."
               }
-              Write-Host "Trusted signing certificate in CurrentUser\\$StoreName."
+              Write-Host "Trusted signing certificate in LocalMachine\\$StoreName."
             }
             finally {
               $Store.Close()
@@ -197,8 +197,8 @@ jobs:
         shell: pwsh
         run: |
           if ($env:SIGNING_THUMBPRINT) {
-            Remove-Item "Cert:\CurrentUser\Root\$env:SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
-            Remove-Item "Cert:\CurrentUser\TrustedPublisher\$env:SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\Root\$env:SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
+            Remove-Item "Cert:\LocalMachine\TrustedPublisher\$env:SIGNING_THUMBPRINT" -Force -ErrorAction SilentlyContinue
           }
           Remove-Item (Join-Path $env:RUNNER_TEMP "codesign.pfx") -Force -ErrorAction SilentlyContinue
           Remove-Item (Join-Path $env:RUNNER_TEMP "publisher.cer") -Force -ErrorAction SilentlyContinue
