@@ -465,6 +465,8 @@ class AppWindow(QMainWindow):
         # Editor page
         self.editor_page.redub_requested.connect(self._start_redub)
         self.editor_page.preview_requested.connect(self._preview_editor_segment)
+        self.editor_page.file_drop.files_changed.connect(self._on_editor_files_dropped)
+        self.editor_page.quick_import_btn.clicked.connect(self._start_editor_url_import)
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(build_stylesheet(self._theme))
@@ -1967,6 +1969,11 @@ class AppWindow(QMainWindow):
             self._append_log(f"URL import complete: {url}")
 
     def _url_import_finished(self, imported: list[Path], failures: list[tuple[str, str]]) -> None:
+        if self.page_stack.currentWidget() == self._pages["editor"] and imported:
+            self.editor_page.url_input.clear()
+            self._initialize_and_open_editor_for_video(imported[0])
+            return
+
         existing = self.import_page.file_drop.files()
         merged = existing + [path for path in imported if path not in existing]
         if merged:
@@ -2118,6 +2125,43 @@ class AppWindow(QMainWindow):
         thread = QThread()
         self._attach_pipeline_worker(thread, worker)
         thread.start()
+
+    def _on_editor_files_dropped(self, paths: list) -> None:
+        if paths:
+            self._initialize_and_open_editor_for_video(Path(paths[0]))
+
+    def _start_editor_url_import(self) -> None:
+        urls_text = self.editor_page.url_input.toPlainText().strip()
+        if not urls_text:
+            QMessageBox.warning(self, "URL import", "Paste at least one supported video URL first.")
+            return
+        urls = [line.strip() for line in urls_text.splitlines() if line.strip()]
+        self._start_url_import(urls)
+
+    def _initialize_and_open_editor_for_video(self, video_path: Path) -> None:
+        from core.session import DubbingSession
+        from dataclasses import replace
+        try:
+            temp_dir = self.project_root / "temp"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            from datetime import datetime
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            work_dir = temp_dir / f"session_{timestamp}"
+            work_dir.mkdir(parents=True, exist_ok=True)
+
+            settings = self._settings_from_ui()
+            settings = replace(settings, input_video=video_path, input_videos=[])
+
+            session = DubbingSession(
+                work_dir=work_dir,
+                settings=settings,
+                status="running"
+            )
+            session.save()
+            
+            self._open_editor_for_session(str(work_dir))
+        except Exception as exc:
+            QMessageBox.critical(self, "Import Failed", f"Could not create session: {exc}")
 
     def _open_editor_for_session(self, work_dir: str) -> None:
         self._navigate_to("editor")
