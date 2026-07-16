@@ -222,6 +222,17 @@ class LicenseClient:
             str(data.get("qr_string", "") or ""),
         )
 
+    def validate_promo(self, promo_code: str, plan: str) -> dict:
+        normalized_promo_code = promo_code.strip().upper()
+        try:
+            data = self._post("/v1/payments/validate-promo", {
+                "promo_code": normalized_promo_code,
+                "plan": plan,
+            })
+            return {"success": True, "discount_percent": data.get("discount_percent", 0), "message": data.get("message", "")}
+        except Exception as exc:
+            return {"success": False, "discount_percent": 0, "message": str(exc)}
+
     def check_payment_status(self, reference_id: str) -> PaymentStatusResult:
         try:
             data = self._get(f"/v1/payments/{reference_id}/status", timeout=5.0)

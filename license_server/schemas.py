@@ -80,3 +80,9 @@ class CreateAdminRequest(EmailModel):
     email: str = Field(min_length=5, max_length=254)
     password: str = Field(min_length=12, max_length=256)
     role: str = Field(pattern="^(owner|support|finance)$")
+
+
+class ValidatePromoRequest(BaseModel):
+    promo_code: str = Field(min_length=1, max_length=30)
+    plan: str = Field(pattern="^(monthly|six_months|yearly)$")
+

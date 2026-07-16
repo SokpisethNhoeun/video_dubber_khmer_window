@@ -13,7 +13,7 @@ from license_server.mail import send_email
 from license_server.schemas import (
     ActivateLicenseRequest, CheckoutRequest, ConfirmPaymentRequest, CreateAdminRequest,
     CreateLicenseRequest, ExtendLicenseRequest, LoginRequest, NoteRequest, OtpRequest,
-    OtpVerifyRequest, ValidateLicenseRequest, CreatePromoCodeRequest,
+    OtpVerifyRequest, ValidateLicenseRequest, CreatePromoCodeRequest, ValidatePromoRequest,
 )
 from license_server.security import digest, hash_password, verify_password
 from license_server.services import (
@@ -275,7 +275,30 @@ def checkout(body: CheckoutRequest, request: Request) -> dict:
                 (promo_code,)
             )
 
-    return {"checkout_url": url, "reference_id": reference, "qr_string": "", "message": "Payment request created; awaiting manual confirmation."}
+        qr_amount = max(0.01, amount)
+        qr_string = f"https://link.bakong.org.kh/pay?id=khmer_video_dubber@pay&name=KhmerVideoDubber&amount={qr_amount:.2f}&currency=USD&reference={reference}"
+
+    return {"checkout_url": url, "reference_id": reference, "qr_string": qr_string, "message": "Payment request created; awaiting manual confirmation."}
+
+
+@router.post("/v1/payments/validate-promo")
+def validate_promo(body: ValidatePromoRequest) -> dict:
+    promo_code = body.promo_code.strip().upper()
+    with connect() as connection:
+        promo = connection.execute("SELECT * FROM promo_codes WHERE code=?", (promo_code,)).fetchone()
+        if not promo or not promo["active"]:
+            raise HTTPException(400, "Promo code is invalid or disabled.")
+        if promo["expires_at"] and datetime.fromisoformat(promo["expires_at"]) <= datetime.now(timezone.utc):
+            raise HTTPException(400, "Promo code has expired.")
+        if promo["max_uses"] is not None and promo["uses_count"] >= promo["max_uses"]:
+            raise HTTPException(400, "Promo code usage limit reached.")
+        
+        return {
+            "success": True,
+            "discount_percent": promo["discount_percent"],
+            "message": f"Promo code {promo_code} applied successfully! ({promo['discount_percent']}% off)"
+        }
+
 
 
 @router.get("/v1/payments/{reference}/status")

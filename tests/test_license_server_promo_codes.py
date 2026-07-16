@@ -160,3 +160,58 @@ def test_promo_code_lifecycle_and_checkout(client: TestClient) -> None:
     # Only EXPIRED is left
     assert len(items) == 1
     assert items[0]["code"] == "EXPIRED"
+
+
+def test_validate_promo_endpoint(client: TestClient) -> None:
+    # Create a promo code
+    headers = {"Authorization": "Bearer test-token"}
+    client.post(
+        "/v1/admin/promo-codes",
+        headers=headers,
+        json={"code": "OFF50", "discount_percent": 50},
+    )
+    
+    # Test valid promo validation
+    res = client.post("/v1/payments/validate-promo", json={"promo_code": "OFF50", "plan": "monthly"})
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    assert res.json()["discount_percent"] == 50
+    
+    # Test invalid promo validation
+    res = client.post("/v1/payments/validate-promo", json={"promo_code": "INVALID", "plan": "monthly"})
+    assert res.status_code == 400
+    assert "invalid or disabled" in res.json()["detail"]
+
+
+def test_checkout_generates_scannable_qr_code_with_minimum_amount(client: TestClient) -> None:
+    # Create a 100% discount promo code
+    headers = {"Authorization": "Bearer test-token"}
+    client.post(
+        "/v1/admin/promo-codes",
+        headers=headers,
+        json={"code": "FREE", "discount_percent": 100},
+    )
+    
+    verification_token = "verification-token-free-plan"
+    expires = (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat()
+    with connect() as connection:
+        connection.execute(
+            "INSERT INTO email_verifications(token_hash,email,expires_at,created_at) VALUES(?,?,?,?)",
+            (digest(verification_token), "buyer@example.com", expires, now_iso()),
+        )
+        
+    res = client.post(
+        "/v1/payments/checkout",
+        json={
+            "email": "buyer@example.com",
+            "plan": "monthly",
+            "email_verification_token": verification_token,
+            "promo_code": "FREE",
+        },
+    )
+    assert res.status_code == 200
+    data = res.json()
+    assert "qr_string" in data
+    # The qr_string should be a Bakong link with at least 0.01 amount
+    assert "amount=0.01" in data["qr_string"]
+

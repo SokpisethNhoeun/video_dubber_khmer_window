@@ -134,7 +134,10 @@ class AccessOnboardingDialog(QDialog):
         self._gemini_valid = False
         self._checkout_created = False
         self._payment_confirmed = False
-        self._models_ready = is_whisper_model_downloaded(DEFAULT_WHISPER_MODEL)
+        self._models_ready = any(
+            is_whisper_model_downloaded(m)
+            for m in ["tiny", "base", "small", "medium", "large-v3"]
+        )
         self._email_verification_token = ""
         self._selected_plan: str | None = None
         self._payment_reference_id = ""
@@ -291,9 +294,21 @@ class AccessOnboardingDialog(QDialog):
         self.promo_code.editingFinished.connect(
             lambda: self.promo_code.setText(self.promo_code.text().strip().upper())
         )
+        self.apply_promo_btn = QPushButton("Apply")
+        self.apply_promo_btn.setObjectName("SecondaryButton")
+        self.apply_promo_btn.setEnabled(False)
+        self.apply_promo_btn.clicked.connect(self._apply_promo_code)
+
         promo_row.addWidget(promo_label)
         promo_row.addWidget(self.promo_code, 1)
+        promo_row.addWidget(self.apply_promo_btn)
         layout.addLayout(promo_row)
+
+        self.promo_feedback = QLabel("")
+        self.promo_feedback.setObjectName("InlineFeedback")
+        self.promo_feedback.setProperty("state", "neutral")
+        self.promo_feedback.setWordWrap(True)
+        layout.addWidget(self.promo_feedback)
 
         promo_help = QLabel("Your promo code will be checked when checkout is created.")
         promo_help.setObjectName("PageDesc")
@@ -552,6 +567,11 @@ class AccessOnboardingDialog(QDialog):
         self._selected_plan = plan_id
         for pid, card in self._plan_cards.items():
             card.set_selected(pid == plan_id)
+        self.apply_promo_btn.setEnabled(True)
+        self.promo_feedback.setText("")
+        self.promo_feedback.setProperty("state", "neutral")
+        self._polish(self.promo_feedback)
+
         plan = next((item for item in PLAN_DEFINITIONS if item[0] == plan_id), None)
         if plan:
             _plan_id, name, price, _features, _recommended = plan
@@ -559,6 +579,58 @@ class AccessOnboardingDialog(QDialog):
             self.selected_plan_summary.setProperty("state", "success")
             self._polish(self.selected_plan_summary)
         self._refresh_buy_button()
+
+    def _apply_promo_code(self) -> None:
+        promo = self.promo_code.text().strip().upper()
+        if not promo:
+            self.promo_feedback.setText("Enter a promo code to apply.")
+            self.promo_feedback.setProperty("state", "failed")
+            self._polish(self.promo_feedback)
+            return
+
+        client = self._client()
+        if client is None:
+            return
+
+        self.apply_promo_btn.setEnabled(False)
+        self.apply_promo_btn.setText("Checking...")
+        QApplication.processEvents()
+        
+        try:
+            res = client.validate_promo(promo, self._selected_plan)
+        except Exception as exc:
+            res = {"success": False, "discount_percent": 0, "message": str(exc)}
+        finally:
+            self.apply_promo_btn.setEnabled(True)
+            self.apply_promo_btn.setText("Apply")
+
+        if res.get("success"):
+            disc = res.get("discount_percent", 0)
+            self.promo_feedback.setText(res.get("message", "Applied successfully."))
+            self.promo_feedback.setProperty("state", "success")
+            self._polish(self.promo_feedback)
+            
+            # Update price summary with discount
+            plan = next((item for item in PLAN_DEFINITIONS if item[0] == self._selected_plan), None)
+            if plan:
+                _plan_id, name, price, _features, _recommended = plan
+                price_val = float(price.replace("$", ""))
+                new_price = price_val * (1.0 - disc / 100.0)
+                self.selected_plan_summary.setText(f"Selected: {name} — {price} (Discounted to ${new_price:.2f})")
+                self.selected_plan_summary.setProperty("state", "success")
+                self._polish(self.selected_plan_summary)
+        else:
+            self.promo_feedback.setText(res.get("message", "Invalid promo code."))
+            self.promo_feedback.setProperty("state", "failed")
+            self._polish(self.promo_feedback)
+            
+            # Reset to original price
+            plan = next((item for item in PLAN_DEFINITIONS if item[0] == self._selected_plan), None)
+            if plan:
+                _plan_id, name, price, _features, _recommended = plan
+                self.selected_plan_summary.setText(f"Selected: {name} — {price}")
+                self.selected_plan_summary.setProperty("state", "success")
+                self._polish(self.selected_plan_summary)
 
     def _refresh_buy_button(self) -> None:
         verified = bool(self._email_verification_token)
