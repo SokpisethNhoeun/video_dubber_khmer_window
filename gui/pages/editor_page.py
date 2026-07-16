@@ -1456,10 +1456,7 @@ class EditorPage(QWidget):
             self.status_lbl.setText("Added current task to batch queue.")
 
     def _open_batch_page(self) -> None:
-        main_win = self.window()
-        if main_win and hasattr(main_win, "_navigate_to"):
-            main_win._navigate_to("import")
-            main_win.sidebar.select("import")
+        self._close_workspace()
 
     def _on_redub(self) -> None:
         if not self._session or not self._dirty:

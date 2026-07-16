@@ -22,9 +22,9 @@ class SidebarItem(QPushButton):
 class Sidebar(QWidget):
     page_selected = pyqtSignal(str)
 
-    EASY_PAGES = {"import", "logs", "sessions", "editor"}
+    EASY_PAGES = {"editor", "logs", "sessions"}
     ALL_PAGES = [
-        ("import", "Import", "mdi.movie-open-outline"),
+        ("editor", "Workspace", "mdi.movie-open-outline"),
         ("speakers", "Speakers", "mdi.account-voice"),
         ("voice", "Voices", "mdi.volume-high"),
         ("translate", "Translate", "mdi.translate"),
@@ -32,7 +32,6 @@ class Sidebar(QWidget):
         ("sponsor", "Sponsor", "mdi.cash-multiple"),
         ("export", "Export", "mdi.package-variant-closed"),
         ("sessions", "Sessions", "mdi.folder-multiple-outline"),
-        ("editor", "Editor", "mdi.pencil-outline"),
         ("logs", "Logs", "mdi.chart-bar"),
         ("settings", "Settings", "mdi.cog-outline"),
     ]
@@ -77,7 +76,7 @@ class Sidebar(QWidget):
         layout.addWidget(self.advanced_btn)
 
         self.set_advanced(False)
-        self.select("import")
+        self.select("editor")
 
     def _on_click(self, key: str) -> None:
         self.select(key)
